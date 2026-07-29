@@ -67,7 +67,12 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
 
   if (isWide) {
     return (
-      <View style={[styles.shell, { backgroundColor: theme.background }]}>
+      <View
+        style={[
+          styles.shell,
+          styles.wideShell,
+          { backgroundColor: theme.background },
+        ]}>
         <View
           style={[
             styles.sidebar,
@@ -136,8 +141,12 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
 
 const styles = StyleSheet.create({
   shell: { flex: 1 },
+  wideShell: {
+    flexDirection: 'row',
+  },
   sidebar: {
     width: 260,
+    flexShrink: 0,
     borderRightWidth: 1,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.lg,
@@ -154,7 +163,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
   },
   sidebarLabel: { ...typography.bodySmall, fontWeight: '600' },
-  main: { flex: 1 },
+  main: { flex: 1, minWidth: 0 },
   topBar: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   mobileTop: {
     flexDirection: 'row',
