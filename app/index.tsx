@@ -1,24 +1,29 @@
+import { useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GradientButton } from '@/components/design-system/Buttons';
 import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
-import { ToolCard } from '@/components/design-system/Cards';
 import { GardenScene } from '@/components/garden/GardenScene';
-import { disclaimer, toolDefinitions } from '@/data/content';
+import { disclaimer } from '@/data/content';
 import { useAppTheme } from '@/hooks/useAppTheme';
-import { brandNames, spacing, typography } from '@/lib/theme';
+import { spacing, typography } from '@/lib/theme';
 import { useAppStore } from '@/store/useAppStore';
 
-const features = toolDefinitions.slice(0, 6);
-
 const STEPS = [
-  'Pick what feels hard today',
-  'Get tiny tools that match your brain state',
-  'Complete small actions',
-  'Earn points and grow your garden',
-  'See proof that your day counted',
+  'Tell us what feels hard',
+  'Use one tiny tool',
+  'Watch your progress grow',
+];
+
+const LANDING_TOOLS = [
+  { icon: '🌱', title: "I Can't Start", line: 'Make the first step smaller.' },
+  { icon: '✨', title: 'Tiny Wins', line: 'Notice what already counted.' },
+  { icon: '⏱️', title: 'Focus Sprint', line: 'Focus for a few minutes.' },
+  { icon: '💭', title: 'Mood', line: 'A quick emotional check-in.' },
+  { icon: '🌙', title: 'Sleep', line: 'Track patterns gently.' },
+  { icon: '💧', title: 'Water', line: 'One-tap hydration.' },
 ];
 
 export default function LandingPage() {
@@ -28,119 +33,160 @@ export default function LandingPage() {
   const { width } = useWindowDimensions();
   const profile = useAppStore((s) => s.userProfile);
 
+  const scrollRef = useRef<ScrollView>(null);
+  const toolsSectionY = useRef(0);
+
+  const isNarrow = width < 360;
   const isCompact = width < 700;
   const isTablet = width >= 700 && width < 1024;
   const isDesktop = width >= 1024;
 
-  const stepColWidth = isDesktop ? '31.5%' : isTablet ? '48%' : '100%';
-  const toolColWidth = isDesktop ? '31.5%' : isTablet ? '48%' : '100%';
+  const stepColWidth = isCompact && !isTablet ? '100%' : isTablet ? '31.5%' : '31.5%';
+  const toolColWidth = isNarrow
+    ? '100%'
+    : isCompact
+      ? '48%'
+      : isTablet
+        ? width >= 820
+          ? '31.5%'
+          : '48%'
+        : '31.5%';
 
   const goNext = () => {
     if (profile?.onboardingComplete) router.push('/dashboard');
     else router.push('/onboarding');
   };
 
-  const loadDemo = () => {
-    useAppStore.getState().loadDemoData();
-    router.push('/dashboard');
+  const scrollToTools = () => {
+    scrollRef.current?.scrollTo({ y: toolsSectionY.current, animated: true });
   };
 
-  const heroText = (
-    <>
-      <Text style={[styles.eyebrow, { color: theme.accentSecondary }]}>
-        {brandNames[0]} · {brandNames[3]}
-      </Text>
-      <Text style={[styles.heroTitle, { color: theme.text }]}>Make tiny progress visible.</Text>
-      <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
-        A gentle ADHD-friendly app for starting tasks, tracking tiny wins, collecting rewards,
-        and growing a cozy world from the things you actually did.
-      </Text>
-      <View style={[styles.ctaRow, isDesktop && styles.ctaRowDesktop]}>
-        <View style={[styles.ctaButtonWrap, isDesktop && styles.ctaButtonWrapDesktop]}>
-          <GradientButton label="Start with my brain today" onPress={goNext} />
-        </View>
-        <View style={[styles.ctaButtonWrap, isDesktop && styles.ctaButtonWrapDesktop]}>
-          <GradientButton
-            label="Explore the tools"
-            onPress={() => router.push('/tools')}
-            variant="secondary"
-          />
-        </View>
-      </View>
-      <View style={[styles.ctaButtonWrap, isDesktop && styles.ctaDemoWrap]}>
-        <GradientButton label="Try with demo data" onPress={loadDemo} variant="ghost" />
-      </View>
-    </>
-  );
-
-  const heroGarden = (
-    <View style={[styles.heroGarden, isDesktop && styles.heroGardenDesktop]}>
-      <GardenScene height={isDesktop ? 280 : isTablet ? 240 : 200} />
-    </View>
-  );
+  const gardenHeight = isDesktop ? 240 : isTablet ? 200 : 160;
 
   return (
     <ScreenContainer padded={false}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + spacing.lg },
+          { paddingTop: insets.top + spacing.md },
         ]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.page}>
+          {/* Hero */}
           <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
             <View style={[styles.heroTextCol, isDesktop && styles.heroTextColDesktop]}>
-              {heroText}
-            </View>
-            {heroGarden}
-          </View>
-
-          <View style={styles.section}>
-            <SectionHeader
-              title="Your brain says you did nothing."
-              subtitle="But you probably did more than you think."
-            />
-            <GlassCard>
-              <Text style={[styles.body, { color: theme.textSecondary }]}>
-                Starting is hard. Switching is hard. Progress is invisible. This app helps you notice
-                tiny actions, restart gently, and see proof that your day counted.
+              <Text style={[styles.eyebrow, { color: theme.accentSecondary }]}>
+                ADHD-friendly self-support
               </Text>
-            </GlassCard>
+              <Text style={[styles.heroTitle, { color: theme.text }]}>
+                Make tiny progress visible.
+              </Text>
+              <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
+                Start when you're stuck, notice what already counted, and grow a little world from
+                real-life wins.
+              </Text>
+
+              <View style={[styles.ctaRow, (isTablet || isDesktop) && styles.ctaRowInline]}>
+                <View
+                  style={[
+                    styles.ctaButtonWrap,
+                    (isTablet || isDesktop) && styles.ctaButtonWrapInline,
+                  ]}>
+                  <GradientButton label="Show me where to start" onPress={goNext} small />
+                </View>
+                <View
+                  style={[
+                    styles.ctaButtonWrap,
+                    (isTablet || isDesktop) && styles.ctaButtonWrapInline,
+                  ]}>
+                  <GradientButton
+                    label="See the tools"
+                    onPress={scrollToTools}
+                    variant="secondary"
+                    small
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.ctaHelper, { color: theme.textMuted }]}>
+                4 quick questions · No account required
+              </Text>
+
+              <View style={styles.trustBlock}>
+                <View style={[styles.trustDot, { backgroundColor: theme.accentSecondary }]} />
+                <View style={styles.trustText}>
+                  <Text style={[styles.trustLine, { color: theme.textSecondary }]}>
+                    Core tools are free. No subscription required.
+                  </Text>
+                  <Text style={[styles.trustLine, { color: theme.textMuted }]}>
+                    Optional paid extras and donations will always be clearly labeled.
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.heroGarden, isDesktop && styles.heroGardenDesktop]}>
+              <GardenScene height={gardenHeight} />
+            </View>
           </View>
 
+          {/* Philosophy */}
+          <View style={styles.philosophy}>
+            <Text style={[styles.philosophyTitle, { color: theme.text }]}>
+              Your brain may say nothing happened.
+            </Text>
+            <Text style={[styles.philosophyTagline, { color: theme.accentSecondary }]}>
+              The garden keeps the receipts.
+            </Text>
+            <Text style={[styles.philosophyBody, { color: theme.textSecondary }]}>
+              Tiny actions become visible progress you can return to later.
+            </Text>
+          </View>
+
+          {/* How it works */}
           <View style={styles.section}>
             <SectionHeader title="How it works" />
             <View style={styles.grid}>
               {STEPS.map((step, i) => (
                 <View key={step} style={{ width: stepColWidth }}>
-                  <GlassCard style={styles.step}>
+                  <GlassCard style={styles.stepCard}>
                     <Text style={[styles.stepNum, { color: theme.accent }]}>{i + 1}</Text>
-                    <Text style={[styles.body, { color: theme.text, flex: 1 }]}>{step}</Text>
+                    <Text style={[styles.stepText, { color: theme.text }]}>{step}</Text>
                   </GlassCard>
                 </View>
               ))}
             </View>
           </View>
 
-          <View style={styles.section}>
+          {/* Tools preview */}
+          <View
+            style={styles.section}
+            onLayout={(e) => {
+              toolsSectionY.current = e.nativeEvent.layout.y;
+            }}>
             <SectionHeader title="Tools that meet you where you are" />
             <View style={styles.grid}>
-              {features.map((tool) => (
-                <View key={tool.id} style={{ width: toolColWidth }}>
-                  <ToolCard tool={tool} />
+              {LANDING_TOOLS.map((tool) => (
+                <View key={tool.title} style={{ width: toolColWidth }}>
+                  <GlassCard style={styles.toolPreview}>
+                    <Text style={styles.toolIcon}>{tool.icon}</Text>
+                    <Text style={[styles.toolTitle, { color: theme.text }]}>{tool.title}</Text>
+                    <Text style={[styles.toolLine, { color: theme.textSecondary }]}>
+                      {tool.line}
+                    </Text>
+                  </GlassCard>
                 </View>
               ))}
             </View>
           </View>
 
-          <GlassCard style={styles.disclaimer}>
-            <Text style={[styles.disclaimerText, { color: theme.textMuted }]}>{disclaimer}</Text>
-          </GlassCard>
-
-          <View style={[styles.section, styles.bottomCta]}>
-            <View style={[styles.ctaButtonWrap, isDesktop && styles.ctaBottomWrap]}>
-              <GradientButton label="Start with my brain today" onPress={goNext} />
+          {/* Footer */}
+          <View style={styles.footer}>
+            <View style={styles.bottomCtaWrap}>
+              <GradientButton label="Show me where to start" onPress={goNext} small />
             </View>
+            <Text style={[styles.disclaimerText, { color: theme.textMuted }]}>{disclaimer}</Text>
           </View>
         </View>
       </ScrollView>
@@ -150,8 +196,8 @@ export default function LandingPage() {
 
 const styles = StyleSheet.create({
   scroll: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xl,
   },
   page: {
     width: '100%',
@@ -160,57 +206,108 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   hero: {
-    gap: spacing.md,
-    marginBottom: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
   },
   heroDesktop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xl,
-    marginBottom: spacing.lg,
+    gap: spacing.lg,
+    marginBottom: spacing.sm,
   },
   heroTextCol: {
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   heroTextColDesktop: {
     flex: 1,
-    maxWidth: 560,
+    maxWidth: 520,
     minWidth: 0,
   },
   heroGarden: {
     width: '100%',
+    marginTop: spacing.xs,
   },
   heroGardenDesktop: {
     flex: 1,
     minWidth: 0,
-    maxWidth: 560,
+    maxWidth: 480,
+    marginTop: 0,
   },
-  eyebrow: { ...typography.caption, fontWeight: '700', letterSpacing: 0.5 },
-  heroTitle: { ...typography.hero, fontFamily: 'SpaceGrotesk_700Bold' },
-  heroSub: { ...typography.body, maxWidth: 560 },
+  eyebrow: {
+    ...typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    ...typography.hero,
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 32,
+    lineHeight: 38,
+  },
+  heroSub: {
+    ...typography.body,
+    maxWidth: 480,
+    lineHeight: 22,
+  },
   ctaRow: {
     gap: spacing.sm,
     width: '100%',
+    marginTop: spacing.xs,
   },
-  ctaRowDesktop: {
+  ctaRowInline: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    maxWidth: 560,
+    alignItems: 'center',
   },
   ctaButtonWrap: {
     width: '100%',
+    maxWidth: 320,
   },
-  ctaButtonWrapDesktop: {
+  ctaButtonWrapInline: {
+    width: 240,
+    maxWidth: 260,
+    flexGrow: 0,
+  },
+  ctaHelper: {
+    ...typography.caption,
+    marginTop: -spacing.xs,
+  },
+  trustBlock: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    maxWidth: 480,
+  },
+  trustDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 6,
+  },
+  trustText: {
     flex: 1,
-    minWidth: 200,
-    maxWidth: 272,
+    gap: 2,
   },
-  ctaDemoWrap: {
-    maxWidth: 560,
+  trustLine: {
+    ...typography.caption,
+    lineHeight: 18,
   },
-  ctaBottomWrap: {
-    maxWidth: 360,
-    alignSelf: 'center',
+  philosophy: {
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  philosophyTitle: {
+    ...typography.h2,
+    fontFamily: 'SpaceGrotesk_600SemiBold',
+  },
+  philosophyTagline: {
+    ...typography.body,
+    fontWeight: '600',
+  },
+  philosophyBody: {
+    ...typography.bodySmall,
+    maxWidth: 420,
   },
   section: {
     gap: spacing.sm,
@@ -221,18 +318,56 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     width: '100%',
   },
-  body: { ...typography.body },
-  step: {
+  stepCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    height: '100%',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    minHeight: 56,
   },
-  stepNum: { ...typography.h2, width: 28 },
-  disclaimer: { marginTop: spacing.sm },
-  disclaimerText: { ...typography.caption, textAlign: 'center' },
-  bottomCta: {
+  stepNum: {
+    ...typography.h3,
+    width: 22,
+    fontWeight: '700',
+  },
+  stepText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    flex: 1,
+  },
+  toolPreview: {
+    padding: spacing.sm,
+    minHeight: 108,
+    justifyContent: 'flex-start',
+    gap: 4,
+  },
+  toolIcon: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
+  toolTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+  },
+  toolLine: {
+    ...typography.caption,
+    lineHeight: 16,
+  },
+  footer: {
     alignItems: 'center',
-    marginTop: spacing.sm,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    paddingBottom: spacing.sm,
+  },
+  bottomCtaWrap: {
+    width: '100%',
+    maxWidth: 280,
+  },
+  disclaimerText: {
+    ...typography.caption,
+    textAlign: 'center',
+    maxWidth: 360,
+    lineHeight: 16,
   },
 });
