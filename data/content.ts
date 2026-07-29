@@ -31,14 +31,16 @@ export const energyOptions = [
   { id: 'okay-ish', label: 'Okay-ish', emoji: '🌤️' },
   { id: 'restless', label: 'Restless', emoji: '⚡' },
   { id: 'wired-tired', label: 'Wired but tired', emoji: '🌀' },
+  { id: 'changes-a-lot', label: 'It changes a lot', emoji: '🎲' },
 ] as const;
 
 export const supportStyleOptions = [
-  { id: 'tiny-steps', label: 'Give me tiny steps' },
-  { id: 'quick-plan', label: 'Give me a quick plan' },
-  { id: 'reward', label: 'Give me a reward' },
-  { id: 'calm-down', label: 'Help me calm down' },
-  { id: 'proof', label: "Show me proof I'm not doing nothing" },
+  { id: 'tiny-steps', label: 'Tiny steps' },
+  { id: 'quick-plan', label: 'Quick plan' },
+  { id: 'reward', label: 'Rewards' },
+  { id: 'calm-down', label: 'Tools to calm down' },
+  { id: 'proof', label: 'Visual proof of progress' },
+  { id: 'routines', label: 'Ready-made routines' },
 ] as const;
 
 export const gardenVibeOptions = [

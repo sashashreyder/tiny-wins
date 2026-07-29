@@ -11,6 +11,7 @@ export const demoProfile: UserProfile = {
   secondaryStruggles: ['low-energy'],
   energyLevel: 'low',
   supportStyle: 'tiny-steps',
+  supportStyles: ['tiny-steps', 'proof'],
   gardenVibe: 'lilac-greenhouse',
   theme: 'light',
   onboardingComplete: true,

@@ -236,6 +236,7 @@ export function getSupportModeLabel(profile: UserProfile | null): string {
     'okay-ish': 'Okay-ish',
     restless: 'Restless',
     'wired-tired': 'Wired but Tired',
+    'changes-a-lot': 'It Changes a Lot',
   };
   return energyLabels[profile.energyLevel] ?? 'Gentle support';
 }

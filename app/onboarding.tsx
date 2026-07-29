@@ -1,18 +1,19 @@
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { GradientButton } from '@/components/design-system/Buttons';
-import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
-import { TagPill } from '@/components/design-system/Tags';
-import { EnergySelector } from '@/components/garden/GardenScene';
+import { OnboardingGrid } from '@/components/onboarding/OnboardingGrid';
+import { OnboardingLayout } from '@/components/onboarding/OnboardingLayout';
 import {
+  OnboardingOptionCard,
+  OnboardingVibeCard,
+} from '@/components/onboarding/OnboardingOptionCard';
+import {
+  energyOptions,
   gardenVibeOptions,
   problemOptions,
   supportStyleOptions,
 } from '@/data/content';
-import { useAppTheme } from '@/hooks/useAppTheme';
-import { spacing, typography } from '@/lib/theme';
 import { useAppStore } from '@/store/useAppStore';
 import {
   EnergyLevel,
@@ -22,33 +23,64 @@ import {
   UserProfile,
 } from '@/types';
 
-const steps = ['struggle', 'energy', 'support', 'garden', 'done'] as const;
+const GRID_GAP_MOBILE = 10;
+const GRID_GAP_DESKTOP = 16;
+
+function toggleOrderedSelection<T extends string>(
+  current: T[],
+  id: T,
+  max: number,
+): T[] {
+  if (current.includes(id)) {
+    const next = current.filter((item) => item !== id);
+    return next.length === 0 ? current : next;
+  }
+  if (current.length >= max) return current;
+  return [...current, id];
+}
 
 export default function OnboardingScreen() {
-  const theme = useAppTheme();
   const router = useRouter();
   const completeOnboarding = useAppStore((s) => s.completeOnboarding);
+  const { width: viewportWidth } = useWindowDimensions();
+
+  const isWide = viewportWidth >= 768;
+  const gridGap = isWide ? GRID_GAP_DESKTOP : GRID_GAP_MOBILE;
 
   const [step, setStep] = useState(0);
-  const [mainStruggle, setMainStruggle] = useState<StruggleId>('cant-start');
-  const [secondary, setSecondary] = useState<StruggleId[]>([]);
+  const [selectedStruggles, setSelectedStruggles] = useState<StruggleId[]>(['cant-start']);
   const [energyLevel, setEnergyLevel] = useState<EnergyLevel>('low');
-  const [supportStyle, setSupportStyle] = useState<SupportStyle>('tiny-steps');
+  const [supportStyles, setSupportStyles] = useState<SupportStyle[]>(['tiny-steps']);
   const [gardenVibe, setGardenVibe] = useState<GardenVibe>('lilac-greenhouse');
 
-  const toggleSecondary = (id: StruggleId) => {
-    setSecondary((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : prev.length < 2 ? [...prev, id] : prev,
-    );
+  const mainStruggle = selectedStruggles[0];
+  const secondaryStruggles = selectedStruggles.slice(1);
+
+  const struggleColumns = isWide ? 4 : 2;
+  const energyColumns = 2;
+  const supportColumns = isWide ? 3 : 2;
+  const vibeColumns = isWide ? 4 : 2;
+
+  const struggleRole = (id: StruggleId): 'Main' | 'Also' | undefined => {
+    if (selectedStruggles[0] === id) return 'Main';
+    if (selectedStruggles.includes(id)) return 'Also';
+    return undefined;
   };
+
+  const canContinue = useMemo(() => {
+    if (step === 0) return selectedStruggles.length >= 1;
+    if (step === 2) return supportStyles.length >= 1;
+    return true;
+  }, [step, selectedStruggles.length, supportStyles.length]);
 
   const finish = () => {
     const profile: UserProfile = {
       id: `user-${Date.now()}`,
       mainStruggle,
-      secondaryStruggles: secondary,
+      secondaryStruggles,
       energyLevel,
-      supportStyle,
+      supportStyle: supportStyles[0],
+      supportStyles,
       gardenVibe,
       theme: 'system',
       onboardingComplete: true,
@@ -63,127 +95,128 @@ export default function OnboardingScreen() {
     router.replace('/dashboard');
   };
 
+  const goNext = () => {
+    if (step === 4) finish();
+    else setStep(step + 1);
+  };
+
+  const goBack = () => setStep(step - 1);
+
+  if (step === 4) {
+    return (
+      <ScreenContainer>
+        <OnboardingLayout
+          stepIndex={step}
+          completion
+          title="Your tiny support space is ready"
+          completionBody="You can start with tools that match your brain today — and update your preferences anytime."
+          showBack
+          onBack={goBack}
+          onContinue={finish}
+          continueLabel="Get started"
+        />
+      </ScreenContainer>
+    );
+  }
+
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={[styles.progress, { color: theme.textMuted }]}>
-          Step {step + 1} of {steps.length}
-        </Text>
+      {step === 0 && (
+        <OnboardingLayout
+          stepIndex={step}
+          title="What feels hardest today?"
+          subtitle="Pick 1 main struggle. Optional: add up to 2 more."
+          hint="Your first choice becomes the main struggle."
+          showBack={false}
+          onContinue={goNext}
+          canContinue={canContinue}>
+          <OnboardingGrid columns={struggleColumns} gap={gridGap}>
+            {problemOptions.map((opt) => (
+              <OnboardingOptionCard
+                key={opt.id}
+                label={opt.label}
+                emoji={opt.emoji}
+                selected={selectedStruggles.includes(opt.id)}
+                badge={struggleRole(opt.id)}
+                onPress={() =>
+                  setSelectedStruggles((prev) => toggleOrderedSelection(prev, opt.id, 3))
+                }
+              />
+            ))}
+          </OnboardingGrid>
+        </OnboardingLayout>
+      )}
 
-        {step === 0 && (
-          <>
-            <SectionHeader
-              title="What feels hardest today?"
-              subtitle="Pick one main struggle. Optional: add up to 2 more."
-            />
-            <View style={styles.pillGrid}>
-              {problemOptions.map((opt) => (
-                <TagPill
-                  key={opt.id}
-                  label={opt.label}
-                  emoji={opt.emoji}
-                  selected={mainStruggle === opt.id || secondary.includes(opt.id)}
-                  onPress={() => {
-                    if (mainStruggle === opt.id) return;
-                    if (secondary.includes(opt.id)) toggleSecondary(opt.id);
-                    else if (mainStruggle !== opt.id && !secondary.includes(opt.id)) {
-                      if (secondary.length === 0 && mainStruggle) {
-                        // first selection becomes main
-                      }
-                    }
-                    if (opt.id === mainStruggle) return;
-                    const isSecondary = secondary.includes(opt.id);
-                    if (isSecondary) toggleSecondary(opt.id);
-                    else setMainStruggle(opt.id);
-                  }}
-                />
-              ))}
-            </View>
-            <Text style={[styles.hint, { color: theme.textSecondary }]}>
-              Tap to set main struggle. Long-press secondary coming soon — for now, main only.
-            </Text>
-          </>
-        )}
+      {step === 1 && (
+        <OnboardingLayout
+          stepIndex={step}
+          title="What is your energy usually like?"
+          subtitle="Pick the one that feels most true most often."
+          showBack
+          onBack={goBack}
+          onContinue={goNext}
+          canContinue={canContinue}>
+          <OnboardingGrid columns={energyColumns} gap={gridGap}>
+            {energyOptions.map((opt) => (
+              <OnboardingOptionCard
+                key={opt.id}
+                label={opt.label}
+                emoji={opt.emoji}
+                selected={energyLevel === opt.id}
+                onPress={() => setEnergyLevel(opt.id as EnergyLevel)}
+              />
+            ))}
+          </OnboardingGrid>
+        </OnboardingLayout>
+      )}
 
-        {step === 1 && (
-          <>
-            <SectionHeader title="What's your energy like?" />
-            <EnergySelector value={energyLevel} onChange={(v) => setEnergyLevel(v as EnergyLevel)} />
-          </>
-        )}
+      {step === 2 && (
+        <OnboardingLayout
+          stepIndex={step}
+          title="What kind of support helps most?"
+          subtitle="Choose up to 3 that usually help."
+          showBack
+          onBack={goBack}
+          onContinue={goNext}
+          canContinue={canContinue}>
+          <OnboardingGrid columns={supportColumns} gap={gridGap}>
+            {supportStyleOptions.map((opt) => (
+              <OnboardingOptionCard
+                key={opt.id}
+                label={opt.label}
+                selected={supportStyles.includes(opt.id as SupportStyle)}
+                onPress={() =>
+                  setSupportStyles((prev) =>
+                    toggleOrderedSelection(prev, opt.id as SupportStyle, 3),
+                  )
+                }
+              />
+            ))}
+          </OnboardingGrid>
+        </OnboardingLayout>
+      )}
 
-        {step === 2 && (
-          <>
-            <SectionHeader title="What kind of support helps?" />
-            <View style={styles.pillGrid}>
-              {supportStyleOptions.map((opt) => (
-                <TagPill
-                  key={opt.id}
-                  label={opt.label}
-                  selected={supportStyle === opt.id}
-                  onPress={() => setSupportStyle(opt.id as SupportStyle)}
-                />
-              ))}
-            </View>
-          </>
-        )}
-
-        {step === 3 && (
-          <>
-            <SectionHeader title="Choose your garden vibe" />
-            <View style={styles.vibeGrid}>
-              {gardenVibeOptions.map((opt) => (
-                <GlassCard
-                  key={opt.id}
-                  onPress={() => setGardenVibe(opt.id as GardenVibe)}
-                  style={{
-                    ...styles.vibeCard,
-                    ...(gardenVibe === opt.id
-                      ? { borderColor: theme.accent, borderWidth: 2 }
-                      : {}),
-                  }}>
-                  <Text style={{ fontSize: 36 }}>{opt.emoji}</Text>
-                  <Text style={[styles.vibeLabel, { color: theme.text }]}>{opt.label}</Text>
-                </GlassCard>
-              ))}
-            </View>
-          </>
-        )}
-
-        {step === 4 && (
-          <GlassCard glow style={styles.doneCard}>
-            <Text style={{ fontSize: 48 }}>🌱</Text>
-            <Text style={[styles.doneTitle, { color: theme.text }]}>Your brain garden is ready</Text>
-            <Text style={[styles.hint, { color: theme.textSecondary }]}>
-              Tiny is real. Starting counts. Let's go gently.
-            </Text>
-          </GlassCard>
-        )}
-
-        <View style={styles.nav}>
-          {step > 0 ? (
-            <GradientButton label="Back" onPress={() => setStep(step - 1)} variant="ghost" style={{ flex: 1 }} />
-          ) : null}
-          <GradientButton
-            label={step === 4 ? 'Go to dashboard' : 'Continue'}
-            onPress={() => (step === 4 ? finish() : setStep(step + 1))}
-            style={{ flex: 1 }}
-          />
-        </View>
-      </ScrollView>
+      {step === 3 && (
+        <OnboardingLayout
+          stepIndex={step}
+          title="Choose your garden vibe"
+          showBack
+          onBack={goBack}
+          onContinue={goNext}
+          canContinue={canContinue}>
+          <OnboardingGrid columns={vibeColumns} gap={gridGap}>
+            {gardenVibeOptions.map((opt) => (
+              <OnboardingVibeCard
+                key={opt.id}
+                label={opt.label}
+                emoji={opt.emoji}
+                selected={gardenVibe === opt.id}
+                onPress={() => setGardenVibe(opt.id as GardenVibe)}
+              />
+            ))}
+          </OnboardingGrid>
+        </OnboardingLayout>
+      )}
     </ScreenContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  scroll: { paddingBottom: spacing.xxl },
-  progress: { ...typography.caption, marginBottom: spacing.md },
-  pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
-  hint: { ...typography.bodySmall, marginBottom: spacing.lg },
-  vibeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  vibeCard: { width: '47%', alignItems: 'center', paddingVertical: spacing.lg },
-  vibeLabel: { ...typography.bodySmall, fontWeight: '600', textAlign: 'center', marginTop: spacing.sm },
-  doneCard: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm, marginBottom: spacing.lg },
-  doneTitle: { ...typography.h1, textAlign: 'center' },
-  nav: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-});

@@ -19,14 +19,16 @@ export type EnergyLevel =
   | 'low'
   | 'okay-ish'
   | 'restless'
-  | 'wired-tired';
+  | 'wired-tired'
+  | 'changes-a-lot';
 
 export type SupportStyle =
   | 'tiny-steps'
   | 'quick-plan'
   | 'reward'
   | 'calm-down'
-  | 'proof';
+  | 'proof'
+  | 'routines';
 
 export type GardenVibe =
   | 'cozy-night'
@@ -111,6 +113,7 @@ export interface UserProfile {
   secondaryStruggles: StruggleId[];
   energyLevel: EnergyLevel;
   supportStyle: SupportStyle;
+  supportStyles: SupportStyle[];
   gardenVibe: GardenVibe;
   theme: ThemeMode;
   onboardingComplete: boolean;

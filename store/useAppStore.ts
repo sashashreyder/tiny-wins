@@ -322,6 +322,16 @@ export const useAppStore = create<AppStore>()(
     {
       name: 'tiny-wins-garden-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as AppStore) };
+        if (merged.userProfile && !merged.userProfile.supportStyles?.length) {
+          merged.userProfile = {
+            ...merged.userProfile,
+            supportStyles: [merged.userProfile.supportStyle],
+          };
+        }
+        return merged;
+      },
     },
   ),
 );
