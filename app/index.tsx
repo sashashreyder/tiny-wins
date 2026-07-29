@@ -28,16 +28,17 @@ const LANDING_TOOLS = [
   { icon: '💧', title: 'Water', line: 'One-tap hydration.' },
 ];
 
-const TOOL_GRID_GAP = 12;
+const TOOL_GRID_GAP_MOBILE = 12;
+const DESKTOP_GRID_GAP = 18;
 
 const SECTION_GAP = {
-  heroPhilosophy: { mobile: 38, desktop: 48 },
-  philosophyHow: { mobile: 38, desktop: 52 },
-  howTools: { mobile: 40, desktop: 52 },
-  toolsFooter: { mobile: 40, desktop: 48 },
+  heroPhilosophy: { mobile: 42, desktop: 54 },
+  philosophyHow: { mobile: 46, desktop: 54 },
+  howTools: { mobile: 48, desktop: 56 },
+  toolsFooter: { mobile: 44, desktop: 52 },
 } as const;
 
-const MOBILE_CTA_WIDTH = 280;
+const MOBILE_CTA_WIDTH = 265;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const rows: T[][] = [];
@@ -47,7 +48,7 @@ function chunk<T>(items: T[], size: number): T[][] {
   return rows;
 }
 
-function BalancedRow({
+function DesktopGridRow({
   gap,
   children,
 }: {
@@ -55,10 +56,30 @@ function BalancedRow({
   children: React.ReactNode[];
 }) {
   return (
-    <View style={[styles.balancedRow, { gap }]}>
+    <View style={[styles.desktopGridRow, { gap }]}>
       {children.map((child, index) => (
-        <View key={index} style={styles.balancedCell}>
+        <View key={index} style={styles.desktopGridCol}>
           {child}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ToolGridRow({
+  gap,
+  tools,
+  theme,
+}: {
+  gap: number;
+  tools: (typeof LANDING_TOOLS)[number][];
+  theme: ReturnType<typeof useAppTheme>;
+}) {
+  return (
+    <View style={[styles.toolGridRow, { gap }]}>
+      {tools.map((tool) => (
+        <View key={tool.title} style={styles.toolGridCell}>
+          <ToolPreviewCard tool={tool} theme={theme} />
         </View>
       ))}
     </View>
@@ -80,10 +101,13 @@ export default function LandingPage() {
   const isDesktop = viewportWidth >= 1024;
 
   const pageWidth = Math.min(viewportWidth - (isDesktop ? spacing.lg * 2 : MOBILE_PAD * 2), PAGE_MAX_WIDTH);
-  const gridGap = isMobile ? TOOL_GRID_GAP : spacing.md;
+  const toolGridGap = isMobile ? TOOL_GRID_GAP_MOBILE : DESKTOP_GRID_GAP;
+  const desktopGridGap = DESKTOP_GRID_GAP;
 
-  const toolColumns = isNarrow ? 1 : 2;
-  const toolRows = useMemo(() => chunk(LANDING_TOOLS, toolColumns), [toolColumns]);
+  const toolRows = useMemo(
+    () => chunk(LANDING_TOOLS, isNarrow ? 1 : 2),
+    [isNarrow],
+  );
 
   const gap = (key: keyof typeof SECTION_GAP) =>
     isDesktop ? SECTION_GAP[key].desktop : SECTION_GAP[key].mobile;
@@ -109,7 +133,7 @@ export default function LandingPage() {
       <Text
         style={[
           styles.ctaHelper,
-          !isDesktop && styles.ctaHelperMobile,
+          isDesktop ? styles.ctaHelperDesktop : styles.ctaHelperMobile,
           { color: theme.textMuted },
         ]}>
         4 quick questions · No account required
@@ -193,7 +217,7 @@ export default function LandingPage() {
               <Text style={[styles.eyebrow, styles.eyebrowDesktop, { color: theme.accentSecondary }]}>
                 ADHD-friendly self-support
               </Text>
-              <View style={styles.heroDesktopRow}>
+              <View style={[styles.heroDesktopRow, { gap: desktopGridGap }]}>
                 <View style={styles.heroDesktopCopy}>{heroCopy}</View>
                 <View style={styles.heroDesktopGarden}>
                   <GardenScene height={gardenHeight} />
@@ -257,17 +281,17 @@ export default function LandingPage() {
           <View style={[styles.section, { marginTop: gap('philosophyHow') }]}>
             <Text style={[styles.sectionHeading, { color: theme.text }]}>How it works</Text>
             {isMobile ? (
-              <View style={[styles.stack, { gap: gridGap }]}>
+              <View style={[styles.stack, { gap: toolGridGap }]}>
                 {STEPS.map((step, i) => (
                   <StepCard key={step} index={i} label={step} theme={theme} />
                 ))}
               </View>
             ) : (
-              <BalancedRow gap={gridGap}>
+              <DesktopGridRow gap={desktopGridGap}>
                 {STEPS.map((step, i) => (
                   <StepCard key={step} index={i} label={step} theme={theme} />
                 ))}
-              </BalancedRow>
+              </DesktopGridRow>
             )}
           </View>
 
@@ -280,18 +304,9 @@ export default function LandingPage() {
             <Text style={[styles.sectionHeading, { color: theme.text }]}>
               Tools that meet you where you are
             </Text>
-            <View style={[styles.stack, { gap: gridGap }]}>
+            <View style={[styles.toolGrid, { gap: toolGridGap }]}>
               {toolRows.map((row, rowIndex) => (
-                <BalancedRow key={`tool-row-${rowIndex}`} gap={gridGap}>
-                  {row.map((tool) => (
-                    <ToolPreviewCard key={tool.title} tool={tool} theme={theme} />
-                  ))}
-                  {row.length < toolColumns
-                    ? Array.from({ length: toolColumns - row.length }).map((_, i) => (
-                        <View key={`spacer-${i}`} style={styles.balancedCell} />
-                      ))
-                    : null}
-                </BalancedRow>
+                <ToolGridRow key={`tool-row-${rowIndex}`} gap={toolGridGap} tools={row} theme={theme} />
               ))}
             </View>
           </View>
@@ -384,12 +399,12 @@ const styles = StyleSheet.create({
     maxWidth: PAGE_MAX_WIDTH,
     alignSelf: 'center',
   },
-  balancedRow: {
+  desktopGridRow: {
     flexDirection: 'row',
     width: '100%',
     alignItems: 'stretch',
   },
-  balancedCell: {
+  desktopGridCol: {
     flex: 1,
     minWidth: 0,
   },
@@ -413,18 +428,16 @@ const styles = StyleSheet.create({
   heroDesktopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.xl,
     width: '100%',
   },
   heroDesktopCopy: {
-    flex: 13,
+    flex: 2,
     minWidth: 0,
     gap: spacing.lg,
   },
   heroDesktopGarden: {
-    flex: 11,
+    flex: 1,
     minWidth: 0,
-    width: '100%',
   },
   eyebrowDesktop: {
     marginBottom: spacing.xs,
@@ -474,6 +487,7 @@ const styles = StyleSheet.create({
   },
   ctaPrimaryDesktop: {
     gap: spacing.xs,
+    alignItems: 'center',
   },
   ctaPrimaryWrapMobile: {
     width: '100%',
@@ -495,6 +509,11 @@ const styles = StyleSheet.create({
   ctaHelper: {
     ...typography.caption,
     lineHeight: 18,
+  },
+  ctaHelperDesktop: {
+    textAlign: 'center',
+    alignSelf: 'stretch',
+    maxWidth: 255,
   },
   ctaHelperMobile: {
     textAlign: 'center',
@@ -623,9 +642,23 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
+  toolGrid: {
+    width: '100%',
+  },
+  toolGridRow: {
+    flexDirection: 'row',
+    width: '100%',
+    alignItems: 'stretch',
+  },
+  toolGridCell: {
+    flex: 1,
+    minWidth: 0,
+  },
+
   toolPreview: {
     width: '100%',
     flex: 1,
+    alignSelf: 'stretch',
     minHeight: 102,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
