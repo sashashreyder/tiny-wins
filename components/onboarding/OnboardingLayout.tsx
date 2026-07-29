@@ -25,7 +25,6 @@ interface OnboardingLayoutProps {
   onBack?: () => void;
   onContinue: () => void;
   continueLabel?: string;
-  canContinue?: boolean;
   completion?: boolean;
   completionBody?: string;
 }
@@ -44,7 +43,6 @@ export function OnboardingLayout({
   onBack,
   onContinue,
   continueLabel = 'Continue',
-  canContinue = true,
   completion = false,
   completionBody,
 }: OnboardingLayoutProps) {
@@ -54,36 +52,78 @@ export function OnboardingLayout({
   const progress = (stepIndex + 1) / totalSteps;
 
   const handleContinue = () => {
-    if (canContinue) onContinue();
+    onContinue();
   };
 
-  const nav = (
+  const renderNav = (centered = false) => (
     <View
       style={[
         styles.nav,
-        isWide ? styles.navDesktop : styles.navMobile,
-        !showBack && styles.navSingle,
+        compactFooter && styles.navCompact,
+        centered ? styles.navCentered : styles.navStart,
       ]}>
       {showBack && onBack ? (
         <View style={[styles.btnWrap, isWide ? styles.btnDesktop : styles.btnMobile]}>
-          <GradientButton label="Back" onPress={onBack} variant="ghost" small />
+          <GradientButton
+            label="Back"
+            onPress={onBack}
+            variant="ghost"
+            small
+            style={styles.btnFill}
+          />
         </View>
       ) : null}
-      <View
-        style={[
-          styles.btnWrap,
-          isWide ? styles.btnDesktop : styles.btnMobile,
-          !showBack && styles.btnSingle,
-          !canContinue && styles.btnDisabled,
-        ]}>
-        <GradientButton label={continueLabel} onPress={handleContinue} small />
+      <View style={[styles.btnWrap, isWide ? styles.btnDesktop : styles.btnMobile]}>
+        <GradientButton
+          label={continueLabel}
+          onPress={handleContinue}
+          small
+          style={styles.btnFill}
+        />
       </View>
     </View>
+  );
+
+  const renderHeader = () => (
+    <>
+      <Text style={[styles.stepLabel, { color: theme.textMuted }]}>
+        Step {stepIndex + 1} of {totalSteps}
+      </Text>
+      <View style={[styles.progressTrack, { backgroundColor: theme.surfaceBorder }]}>
+        <View
+          style={[
+            styles.progressFill,
+            { width: `${progress * 100}%`, backgroundColor: theme.accentSecondary },
+          ]}
+        />
+      </View>
+
+      {title ? <Text style={[styles.title, { color: theme.text }]}>{title}</Text> : null}
+      {subtitle ? (
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</Text>
+      ) : null}
+      {hint ? <Text style={[styles.hint, { color: theme.textMuted }]}>{hint}</Text> : null}
+      {secondaryHint ? (
+        <Text style={[styles.secondaryHint, { color: theme.textMuted }]}>{secondaryHint}</Text>
+      ) : null}
+      {textAction ? (
+        <Pressable
+          onPress={textAction.onPress}
+          accessibilityRole="button"
+          accessibilityLabel={textAction.label}
+          style={({ pressed }) => [styles.textActionBtn, pressed && styles.textActionPressed]}>
+          <Text style={[styles.textActionLabel, { color: theme.accentSecondary }]}>
+            {textAction.label}
+          </Text>
+        </Pressable>
+      ) : null}
+    </>
   );
 
   if (completion) {
     return (
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={[styles.scroll, styles.completionScroll]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.completionWrap}>
@@ -96,75 +136,25 @@ export function OnboardingLayout({
               </Text>
             ) : null}
           </GlassCard>
-          {nav}
+          {renderNav(true)}
         </View>
       </ScrollView>
     );
   }
 
+  const horizontalPad = isWide ? spacing.lg : MOBILE_PAD;
+
   return (
     <ScrollView
       style={styles.scrollView}
       contentContainerStyle={styles.scroll}
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
-      <View
-        style={[
-          styles.container,
-          { paddingHorizontal: isWide ? spacing.lg : MOBILE_PAD },
-        ]}>
-        <Text style={[styles.stepLabel, { color: theme.textMuted }]}>
-          Step {stepIndex + 1} of {totalSteps}
-        </Text>
-        <View style={[styles.progressTrack, { backgroundColor: theme.surfaceBorder }]}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${progress * 100}%`, backgroundColor: theme.accentSecondary },
-            ]}
-          />
-        </View>
-
-        {title ? (
-          <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
-        ) : null}
-        {subtitle ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</Text>
-        ) : null}
-        {hint ? (
-          <Text style={[styles.hint, { color: theme.textMuted }]}>{hint}</Text>
-        ) : null}
-        {secondaryHint ? (
-          <Text style={[styles.secondaryHint, { color: theme.textMuted }]}>{secondaryHint}</Text>
-        ) : null}
-        {textAction ? (
-          <Pressable
-            onPress={textAction.onPress}
-            accessibilityRole="button"
-            accessibilityLabel={textAction.label}
-            style={({ pressed }) => [styles.textActionBtn, pressed && styles.textActionPressed]}>
-            <Text style={[styles.textActionLabel, { color: theme.accentSecondary }]}>
-              {textAction.label}
-            </Text>
-          </Pressable>
-        ) : null}
+      <View style={[styles.container, { paddingHorizontal: horizontalPad }]}>
+        {renderHeader()}
 
         <View style={[styles.optionsArea, compactFooter && styles.optionsAreaCompact]}>{children}</View>
-        <View style={[styles.nav, compactFooter && styles.navCompact, isWide ? styles.navDesktop : styles.navMobile, !showBack && styles.navSingle]}>
-          {showBack && onBack ? (
-            <View style={[styles.btnWrap, isWide ? styles.btnDesktop : styles.btnMobile]}>
-              <GradientButton label="Back" onPress={onBack} variant="ghost" small />
-            </View>
-          ) : null}
-          <View
-            style={[
-              styles.btnWrap,
-              isWide ? styles.btnDesktop : styles.btnMobile,
-              !showBack && styles.btnSingle,
-              !canContinue && styles.btnDisabled,
-            ]}>
-            <GradientButton label={continueLabel} onPress={handleContinue} small />
-          </View>
-        </View>
+        {renderNav()}
       </View>
     </ScrollView>
   );
@@ -176,7 +166,7 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flexGrow: 1,
-    paddingBottom: spacing.xxl,
+    paddingBottom: spacing.xxl + spacing.lg,
     alignItems: 'center',
   },
   container: {
@@ -246,39 +236,30 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.md,
   },
+  navStart: {
+    justifyContent: 'flex-start',
+    alignSelf: 'stretch',
+  },
+  navCentered: {
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
   navCompact: {
     marginTop: spacing.sm,
   },
-  navDesktop: {
-    justifyContent: 'flex-start',
-  },
-  navMobile: {
-    justifyContent: 'center',
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: BTN_WIDTH_MOBILE * 2 + spacing.sm,
-  },
-  navSingle: {
-    maxWidth: BTN_WIDTH_MOBILE,
-  },
   btnWrap: {
-    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  btnFill: {
+    width: '100%',
   },
   btnDesktop: {
     width: BTN_WIDTH_DESKTOP,
     maxWidth: BTN_WIDTH_DESKTOP,
   },
   btnMobile: {
-    flex: 1,
-    minWidth: BTN_WIDTH_MOBILE,
-    maxWidth: BTN_WIDTH_MOBILE,
-  },
-  btnSingle: {
-    flex: 0,
     width: BTN_WIDTH_MOBILE,
-  },
-  btnDisabled: {
-    opacity: 0.45,
+    maxWidth: BTN_WIDTH_MOBILE,
   },
   completionScroll: {
     justifyContent: 'center',

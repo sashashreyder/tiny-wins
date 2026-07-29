@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
@@ -96,12 +96,6 @@ export default function OnboardingScreen() {
     return undefined;
   };
 
-  const canContinue = useMemo(() => {
-    if (step === 0) return selectedStruggles.length >= 1;
-    if (step === 2) return supportStyles.length >= 1;
-    return true;
-  }, [step, selectedStruggles.length, supportStyles.length]);
-
   const finish = () => {
     if (!selectedStruggles[0]) return;
     const profile: UserProfile = {
@@ -126,6 +120,8 @@ export default function OnboardingScreen() {
   };
 
   const goNext = () => {
+    if (step === 0 && selectedStruggles.length < 1) return;
+    if (step === 2 && supportStyles.length < 1) return;
     if (step === 4) finish();
     else setStep(step + 1);
   };
@@ -165,8 +161,7 @@ export default function OnboardingScreen() {
           }
           compactFooter
           showBack={false}
-          onContinue={goNext}
-          canContinue={canContinue}>
+          onContinue={goNext}>
           <OnboardingGrid columns={struggleColumns} gap={gridGap}>
             {problemOptions.map((opt) => (
               <OnboardingOptionCard
@@ -189,8 +184,7 @@ export default function OnboardingScreen() {
           subtitle="Choose the option that best matches your usual energy."
           showBack
           onBack={goBack}
-          onContinue={goNext}
-          canContinue={canContinue}>
+          onContinue={goNext}>
           <OnboardingGrid columns={energyColumns} gap={gridGap}>
             {energyOptions.map((opt) => (
               <OnboardingOptionCard
@@ -212,8 +206,7 @@ export default function OnboardingScreen() {
           subtitle="Choose up to 3 that usually help. Tap a selected option again to remove it."
           showBack
           onBack={goBack}
-          onContinue={goNext}
-          canContinue={canContinue}>
+          onContinue={goNext}>
           <OnboardingGrid columns={supportColumns} gap={gridGap}>
             {supportStyleOptions.map((opt) => (
               <OnboardingOptionCard
@@ -237,8 +230,7 @@ export default function OnboardingScreen() {
           title="Choose your garden vibe"
           showBack
           onBack={goBack}
-          onContinue={goNext}
-          canContinue={canContinue}>
+          onContinue={goNext}>
           <OnboardingGrid columns={vibeColumns} gap={gridGap}>
             {gardenVibeOptions.map((opt) => (
               <OnboardingVibeCard
