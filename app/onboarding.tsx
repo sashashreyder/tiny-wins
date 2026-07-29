@@ -26,6 +26,36 @@ import {
 const GRID_GAP_MOBILE = 10;
 const GRID_GAP_DESKTOP = 16;
 
+function selectStruggle(current: StruggleId[], id: StruggleId): StruggleId[] {
+  const isSelected = current.includes(id);
+  const isMain = current[0] === id;
+  const isSecondary = isSelected && !isMain;
+
+  if (current.length === 0) {
+    return [id];
+  }
+
+  if (current.length === 3) {
+    if (isSecondary) {
+      return current.filter((item) => item !== id);
+    }
+    if (!isSelected) {
+      return [id];
+    }
+    return current;
+  }
+
+  if (isSecondary) {
+    return current.filter((item) => item !== id);
+  }
+
+  if (!isSelected) {
+    return [...current, id];
+  }
+
+  return current;
+}
+
 function toggleOrderedSelection<T extends string>(
   current: T[],
   id: T,
@@ -48,12 +78,11 @@ export default function OnboardingScreen() {
   const gridGap = isWide ? GRID_GAP_DESKTOP : GRID_GAP_MOBILE;
 
   const [step, setStep] = useState(0);
-  const [selectedStruggles, setSelectedStruggles] = useState<StruggleId[]>(['cant-start']);
+  const [selectedStruggles, setSelectedStruggles] = useState<StruggleId[]>([]);
   const [energyLevel, setEnergyLevel] = useState<EnergyLevel>('low');
   const [supportStyles, setSupportStyles] = useState<SupportStyle[]>(['tiny-steps']);
   const [gardenVibe, setGardenVibe] = useState<GardenVibe>('lilac-greenhouse');
 
-  const mainStruggle = selectedStruggles[0];
   const secondaryStruggles = selectedStruggles.slice(1);
 
   const struggleColumns = isWide ? 4 : 2;
@@ -74,9 +103,10 @@ export default function OnboardingScreen() {
   }, [step, selectedStruggles.length, supportStyles.length]);
 
   const finish = () => {
+    if (!selectedStruggles[0]) return;
     const profile: UserProfile = {
       id: `user-${Date.now()}`,
-      mainStruggle,
+      mainStruggle: selectedStruggles[0],
       secondaryStruggles,
       energyLevel,
       supportStyle: supportStyles[0],
@@ -104,7 +134,7 @@ export default function OnboardingScreen() {
 
   if (step === 4) {
     return (
-      <ScreenContainer>
+      <ScreenContainer padded={false}>
         <OnboardingLayout
           stepIndex={step}
           completion
@@ -120,13 +150,20 @@ export default function OnboardingScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer padded={false}>
       {step === 0 && (
         <OnboardingLayout
           stepIndex={step}
           title="What feels hardest today?"
           subtitle="Pick 1 main struggle. Optional: add up to 2 more."
-          hint="Your first choice becomes the main struggle."
+          hint="Your first pick is the main one. Add up to 2 more if you want."
+          secondaryHint="Tap an additional choice again to remove it."
+          textAction={
+            selectedStruggles.length > 0
+              ? { label: 'Change main', onPress: () => setSelectedStruggles([]) }
+              : undefined
+          }
+          compactFooter
           showBack={false}
           onContinue={goNext}
           canContinue={canContinue}>
@@ -138,9 +175,7 @@ export default function OnboardingScreen() {
                 emoji={opt.emoji}
                 selected={selectedStruggles.includes(opt.id)}
                 badge={struggleRole(opt.id)}
-                onPress={() =>
-                  setSelectedStruggles((prev) => toggleOrderedSelection(prev, opt.id, 3))
-                }
+                onPress={() => setSelectedStruggles((prev) => selectStruggle(prev, opt.id))}
               />
             ))}
           </OnboardingGrid>
@@ -151,7 +186,7 @@ export default function OnboardingScreen() {
         <OnboardingLayout
           stepIndex={step}
           title="What is your energy usually like?"
-          subtitle="Pick the one that feels most true most often."
+          subtitle="Choose the option that best matches your usual energy."
           showBack
           onBack={goBack}
           onContinue={goNext}
@@ -174,7 +209,7 @@ export default function OnboardingScreen() {
         <OnboardingLayout
           stepIndex={step}
           title="What kind of support helps most?"
-          subtitle="Choose up to 3 that usually help."
+          subtitle="Choose up to 3 that usually help. Tap a selected option again to remove it."
           showBack
           onBack={goBack}
           onContinue={goNext}

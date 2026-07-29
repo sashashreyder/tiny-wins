@@ -31,7 +31,7 @@ export const energyOptions = [
   { id: 'okay-ish', label: 'Okay-ish', emoji: '🌤️' },
   { id: 'restless', label: 'Restless', emoji: '⚡' },
   { id: 'wired-tired', label: 'Wired but tired', emoji: '🌀' },
-  { id: 'changes-a-lot', label: 'It changes a lot', emoji: '🎲' },
+  { id: 'changes-a-lot', label: 'It changes often', emoji: '🎲' },
 ] as const;
 
 export const supportStyleOptions = [

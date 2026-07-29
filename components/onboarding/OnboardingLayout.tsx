@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { GradientButton } from '@/components/design-system/Buttons';
 import { GlassCard } from '@/components/design-system/GlassCard';
 import { useAppTheme } from '@/hooks/useAppTheme';
@@ -17,6 +17,9 @@ interface OnboardingLayoutProps {
   title?: string;
   subtitle?: string;
   hint?: string;
+  secondaryHint?: string;
+  textAction?: { label: string; onPress: () => void };
+  compactFooter?: boolean;
   children?: ReactNode;
   showBack?: boolean;
   onBack?: () => void;
@@ -33,6 +36,9 @@ export function OnboardingLayout({
   title,
   subtitle,
   hint,
+  secondaryHint,
+  textAction,
+  compactFooter,
   children,
   showBack,
   onBack,
@@ -68,6 +74,7 @@ export function OnboardingLayout({
           styles.btnWrap,
           isWide ? styles.btnDesktop : styles.btnMobile,
           !showBack && styles.btnSingle,
+          !canContinue && styles.btnDisabled,
         ]}>
         <GradientButton label={continueLabel} onPress={handleContinue} small />
       </View>
@@ -96,7 +103,10 @@ export function OnboardingLayout({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.scrollView}
+      contentContainerStyle={styles.scroll}
+      showsVerticalScrollIndicator={false}>
       <View
         style={[
           styles.container,
@@ -123,15 +133,47 @@ export function OnboardingLayout({
         {hint ? (
           <Text style={[styles.hint, { color: theme.textMuted }]}>{hint}</Text>
         ) : null}
+        {secondaryHint ? (
+          <Text style={[styles.secondaryHint, { color: theme.textMuted }]}>{secondaryHint}</Text>
+        ) : null}
+        {textAction ? (
+          <Pressable
+            onPress={textAction.onPress}
+            accessibilityRole="button"
+            accessibilityLabel={textAction.label}
+            style={({ pressed }) => [styles.textActionBtn, pressed && styles.textActionPressed]}>
+            <Text style={[styles.textActionLabel, { color: theme.accentSecondary }]}>
+              {textAction.label}
+            </Text>
+          </Pressable>
+        ) : null}
 
-        <View style={styles.optionsArea}>{children}</View>
-        {nav}
+        <View style={[styles.optionsArea, compactFooter && styles.optionsAreaCompact]}>{children}</View>
+        <View style={[styles.nav, compactFooter && styles.navCompact, isWide ? styles.navDesktop : styles.navMobile, !showBack && styles.navSingle]}>
+          {showBack && onBack ? (
+            <View style={[styles.btnWrap, isWide ? styles.btnDesktop : styles.btnMobile]}>
+              <GradientButton label="Back" onPress={onBack} variant="ghost" small />
+            </View>
+          ) : null}
+          <View
+            style={[
+              styles.btnWrap,
+              isWide ? styles.btnDesktop : styles.btnMobile,
+              !showBack && styles.btnSingle,
+              !canContinue && styles.btnDisabled,
+            ]}>
+            <GradientButton label={continueLabel} onPress={handleContinue} small />
+          </View>
+        </View>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flex: 1,
+  },
   scroll: {
     flexGrow: 1,
     paddingBottom: spacing.xxl,
@@ -172,16 +214,40 @@ const styles = StyleSheet.create({
   hint: {
     ...typography.bodySmall,
     lineHeight: 20,
-    marginBottom: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  secondaryHint: {
+    ...typography.caption,
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+  },
+  textActionBtn: {
+    alignSelf: 'flex-start',
+    marginBottom: spacing.sm,
+    paddingVertical: 2,
+  },
+  textActionPressed: {
+    opacity: 0.7,
+  },
+  textActionLabel: {
+    ...typography.caption,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   optionsArea: {
     marginTop: spacing.sm,
     marginBottom: spacing.xl,
   },
+  optionsAreaCompact: {
+    marginBottom: spacing.md,
+  },
   nav: {
     flexDirection: 'row',
     gap: spacing.sm,
     marginTop: spacing.md,
+  },
+  navCompact: {
+    marginTop: spacing.sm,
   },
   navDesktop: {
     justifyContent: 'flex-start',
@@ -210,6 +276,9 @@ const styles = StyleSheet.create({
   btnSingle: {
     flex: 0,
     width: BTN_WIDTH_MOBILE,
+  },
+  btnDisabled: {
+    opacity: 0.45,
   },
   completionScroll: {
     justifyContent: 'center',

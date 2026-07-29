@@ -20,6 +20,9 @@ export function OnboardingOptionCard({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      accessibilityLabel={badge ? `${label}, ${badge}` : label}
       style={({ pressed }) => [pressed && styles.pressed, styles.fill]}>
       <View
         style={[
@@ -71,6 +74,9 @@ export function OnboardingVibeCard({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      accessibilityLabel={label}
       style={({ pressed }) => [pressed && styles.pressed, styles.fill]}>
       <View
         style={[
