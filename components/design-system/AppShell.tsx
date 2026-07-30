@@ -14,6 +14,14 @@ const mainNav = [
   { route: '/settings', label: 'More', icon: '⚙️' },
 ];
 
+const TOP_LEVEL_MOBILE_ROUTES = new Set([
+  '/dashboard',
+  '/tools',
+  '/garden',
+  '/progress',
+  '/settings',
+]);
+
 const sidebarNav = [
   { route: '/dashboard', label: 'Dashboard', icon: '🏡' },
   { route: '/cant-start', label: "Can't Start", icon: '🌱' },
@@ -42,6 +50,15 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
   const { width } = useWindowDimensions();
   const isWide = width >= 900;
   const xpToday = useAppStore((s) => s.xpToday);
+  const showMobileBack = !isWide && Boolean(title) && !TOP_LEVEL_MOBILE_ROUTES.has(pathname);
+
+  const handleMobileBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/dashboard' as never);
+    }
+  };
 
   const NavItem = ({ route, label, icon }: { route: string; label: string; icon: string }) => {
     const active = pathname === route || pathname.startsWith(route + '/');
@@ -117,7 +134,21 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
               borderColor: theme.surfaceBorder,
             },
           ]}>
-          <Text style={[styles.pageTitle, { color: theme.text }]}>{title}</Text>
+          {showMobileBack ? (
+            <Pressable
+              onPress={handleMobileBack}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              hitSlop={8}
+              style={styles.backBtn}>
+              <Text style={[styles.backArrow, { color: theme.text }]}>←</Text>
+            </Pressable>
+          ) : null}
+          <Text
+            style={[styles.pageTitle, styles.mobilePageTitle, { color: theme.text }]}
+            numberOfLines={1}>
+            {title}
+          </Text>
           <XPBadge xp={xpToday} size="sm" />
         </View>
       ) : null}
@@ -168,12 +199,28 @@ const styles = StyleSheet.create({
   mobileTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
   },
+  backBtn: {
+    paddingVertical: 4,
+    paddingRight: spacing.xs,
+    minWidth: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backArrow: {
+    fontSize: 22,
+    fontWeight: '600',
+    lineHeight: 26,
+  },
   pageTitle: { ...typography.h2 },
+  mobilePageTitle: {
+    flex: 1,
+    minWidth: 0,
+  },
   content: { flex: 1 },
   tabBar: {
     position: 'absolute',

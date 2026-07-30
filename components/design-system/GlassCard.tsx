@@ -8,9 +8,18 @@ interface GlassCardProps {
   style?: ViewStyle | ViewStyle[];
   onPress?: () => void;
   glow?: boolean;
+  accessibilityRole?: 'button' | 'link' | 'none';
+  accessibilityLabel?: string;
 }
 
-export function GlassCard({ children, style, onPress, glow }: GlassCardProps) {
+export function GlassCard({
+  children,
+  style,
+  onPress,
+  glow,
+  accessibilityRole,
+  accessibilityLabel,
+}: GlassCardProps) {
   const theme = useAppTheme();
   const content = (
     <View
@@ -30,7 +39,11 @@ export function GlassCard({ children, style, onPress, glow }: GlassCardProps) {
 
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole={accessibilityRole ?? 'button'}
+        accessibilityLabel={accessibilityLabel}
+        style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}>
         {content}
       </Pressable>
     );
@@ -73,6 +86,10 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   pressed: { opacity: 0.92, transform: [{ scale: 0.985 }] },
+  pressable: {
+    alignSelf: 'stretch',
+    flexGrow: 1,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',

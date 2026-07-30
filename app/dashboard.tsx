@@ -24,11 +24,13 @@ const QUICK_GAP = 10;
 
 const SECTION_GAP = {
   headerFeature: { mobile: 22, desktop: 26 },
-  featureQuick: { mobile: 30, desktop: 36 },
-  quickToday: { mobile: 32, desktop: 36 },
-  todayGarden: { mobile: 32, desktop: 36 },
-  gardenRecs: { mobile: 32, desktop: 36 },
+  featureQuick: { mobile: 35, desktop: 40 },
+  quickToday: { mobile: 36, desktop: 40 },
+  todayGarden: { mobile: 36, desktop: 40 },
+  gardenRecs: { mobile: 36, desktop: 40 },
 } as const;
+
+const FEATURE_CARD_MIN_HEIGHT = 152;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const rows: T[][] = [];
@@ -54,7 +56,7 @@ function QuickActionsGrid({
         <View key={`quick-row-${rowIndex}`} style={[styles.quickRow, { gap }]}>
           {row.map((child, colIndex) => (
             <View key={`quick-cell-${rowIndex}-${colIndex}`} style={styles.quickCell}>
-              {child}
+              <View style={styles.quickActionWrap}>{child}</View>
             </View>
           ))}
           {row.length < columns
@@ -74,15 +76,17 @@ function DashboardToolCard({ tool }: { tool: ToolDefinition }) {
 
   return (
     <GlassCard onPress={() => router.push(tool.route as never)} style={styles.recCard}>
-      <View style={styles.recHeader}>
-        <Text style={styles.recIcon}>{tool.icon}</Text>
-        <Text style={[styles.recTitle, { color: theme.text }]} numberOfLines={2}>
-          {tool.title}
+      <View style={styles.recBody}>
+        <View style={styles.recHeader}>
+          <Text style={styles.recIcon}>{tool.icon}</Text>
+          <Text style={[styles.recTitle, { color: theme.text }]} numberOfLines={2}>
+            {tool.title}
+          </Text>
+        </View>
+        <Text style={[styles.recDesc, { color: theme.textSecondary }]} numberOfLines={2}>
+          {tool.description}
         </Text>
       </View>
-      <Text style={[styles.recDesc, { color: theme.textSecondary }]} numberOfLines={2}>
-        {tool.description}
-      </Text>
     </GlassCard>
   );
 }
@@ -93,13 +97,12 @@ export default function DashboardScreen() {
   const { width: viewportWidth } = useWindowDimensions();
   const profile = useAppStore((s) => s.userProfile);
   const xpTotal = useAppStore((s) => s.xpTotal);
-  const tinyWins = useAppStore((s) => s.tinyWins);
   const addWater = useAppStore((s) => s.addWater);
   const storeState = useAppStore();
 
   const isWide = viewportWidth >= 900;
   const isDesktopRecs = viewportWidth >= 768;
-  const quickColumns = isWide ? 7 : 4;
+  const quickColumns = isWide ? 8 : 4;
   const recColumns = isDesktopRecs ? 3 : 1;
 
   const gap = (key: keyof typeof SECTION_GAP) =>
@@ -119,10 +122,16 @@ export default function DashboardScreen() {
     { emoji: '⏱️', label: 'Focus', route: '/focus' },
     { emoji: '💭', label: 'Mood', route: '/mood' },
     { emoji: '🌙', label: 'Sleep', route: '/sleep' },
+    { emoji: '🫶', label: 'Self-Care', route: '/self-care' },
   ];
 
+  const featureCardStyle = isWide ? styles.featureCardDesktop : styles.fillCard;
+
   const primaryCard = (
-    <GlassCard glow onPress={() => router.push(primary.route as never)} style={styles.fillCard}>
+    <GlassCard
+      glow
+      onPress={() => router.push(primary.route as never)}
+      style={featureCardStyle}>
       <Text style={[styles.primaryLabel, { color: theme.textSecondary }]}>Try this first</Text>
       <Text style={[styles.primaryAction, { color: theme.text }]}>{primary.label}</Text>
       <Text style={[styles.primaryHint, { color: theme.accentSecondary }]}>
@@ -132,8 +141,12 @@ export default function DashboardScreen() {
   );
 
   const progressCard = (
-    <GlassCard style={styles.fillCard}>
-      <Text style={[styles.progressTitle, { color: theme.text }]}>Garden progress</Text>
+    <GlassCard
+      onPress={() => router.push('/garden' as never)}
+      style={featureCardStyle}
+      accessibilityRole="button"
+      accessibilityLabel="Garden progress, go to garden">
+      <Text style={[styles.progressTitle, { color: theme.text }]}>Garden progress →</Text>
       {milestone.isComplete ? (
         <>
           <Text style={[styles.progressTotal, { color: theme.textSecondary }]}>
@@ -169,6 +182,7 @@ export default function DashboardScreen() {
             {
               paddingHorizontal: isWide ? spacing.lg : MOBILE_PAD,
               paddingTop: isWide ? 30 : 24,
+              paddingBottom: isWide ? 44 : 20,
             },
           ]}
           showsVerticalScrollIndicator={false}>
@@ -185,8 +199,8 @@ export default function DashboardScreen() {
             <View style={{ marginTop: gap('headerFeature') }}>
               {isWide ? (
                 <View style={styles.featureRow}>
-                  <View style={styles.featurePrimary}>{primaryCard}</View>
-                  <View style={styles.featureProgress}>{progressCard}</View>
+                  <View style={styles.featureCardWrap}>{primaryCard}</View>
+                  <View style={styles.featureCardWrap}>{progressCard}</View>
                 </View>
               ) : (
                 <View style={styles.featureStack}>
@@ -290,7 +304,6 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
-    paddingBottom: spacing.xxl + spacing.lg,
     alignItems: 'center',
   },
   page: {
@@ -315,20 +328,22 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     gap: spacing.lg,
   },
-  featurePrimary: {
-    flex: 3,
+  featureCardWrap: {
+    flex: 1,
     minWidth: 0,
-  },
-  featureProgress: {
-    flex: 2,
-    minWidth: 0,
+    alignSelf: 'stretch',
   },
   featureStack: {
     gap: spacing.md,
   },
   fillCard: {
+    width: '100%',
+  },
+  featureCardDesktop: {
     flex: 1,
-    height: '100%',
+    width: '100%',
+    minHeight: FEATURE_CARD_MIN_HEIGHT,
+    justifyContent: 'space-between',
   },
   primaryLabel: {
     ...typography.caption,
@@ -364,6 +379,11 @@ const styles = StyleSheet.create({
   quickCell: {
     flex: 1,
     minWidth: 0,
+    alignSelf: 'stretch',
+  },
+  quickActionWrap: {
+    flex: 1,
+    alignSelf: 'stretch',
   },
   headerAction: {
     ...typography.caption,
@@ -401,8 +421,11 @@ const styles = StyleSheet.create({
   },
   recCard: {
     flex: 1,
-    minHeight: 108,
-    gap: spacing.sm,
+    minHeight: 92,
+    justifyContent: 'center',
+  },
+  recBody: {
+    gap: spacing.xs,
   },
   recHeader: {
     flexDirection: 'row',
