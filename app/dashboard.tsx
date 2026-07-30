@@ -1,7 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppShell } from '@/components/design-system/AppShell';
-import { IconButton } from '@/components/design-system/Buttons';
 import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
 import { ProgressBar } from '@/components/design-system/Progress';
@@ -14,7 +13,7 @@ import {
   getTodayWins,
 } from '@/lib/recommendations';
 import { useAppTheme } from '@/hooks/useAppTheme';
-import { spacing, typography } from '@/lib/theme';
+import { spacing, typography, radii } from '@/lib/theme';
 import { useAppStore } from '@/store/useAppStore';
 import { ToolDefinition } from '@/types';
 
@@ -40,6 +39,33 @@ function chunk<T>(items: T[], size: number): T[][] {
   return rows;
 }
 
+function DashboardQuickAction({
+  emoji,
+  label,
+  onPress,
+}: {
+  emoji: string;
+  label: string;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.dashboardQuickBtn,
+        { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
+        pressed && styles.quickPressed,
+      ]}>
+      <Text style={styles.quickEmoji}>{emoji}</Text>
+      <Text style={[styles.quickLabel, { color: theme.textSecondary }]} numberOfLines={2}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function QuickActionsGrid({
   columns,
   gap,
@@ -51,7 +77,7 @@ function QuickActionsGrid({
 }) {
   const rows = chunk(children, columns);
   return (
-    <View style={{ gap }}>
+    <View style={[styles.quickGrid, { gap }]}>
       {rows.map((row, rowIndex) => (
         <View key={`quick-row-${rowIndex}`} style={[styles.quickRow, { gap }]}>
           {row.map((child, colIndex) => (
@@ -187,16 +213,18 @@ export default function DashboardScreen() {
           ]}
           showsVerticalScrollIndicator={false}>
           <View style={styles.page}>
-            <View style={styles.header}>
-              <Text style={[styles.greeting, { color: theme.text }]}>
-                Hey, your brain doesn't have to do everything at once.
-              </Text>
-              <Text style={[styles.mode, { color: theme.textSecondary }]}>
-                Today's support mode: {supportMode}
-              </Text>
+            <View style={styles.sectionTrack}>
+              <View style={styles.header}>
+                <Text style={[styles.greeting, { color: theme.text }]}>
+                  Hey, your brain doesn't have to do everything at once.
+                </Text>
+                <Text style={[styles.mode, { color: theme.textSecondary }]}>
+                  Today's support mode: {supportMode}
+                </Text>
+              </View>
             </View>
 
-            <View style={{ marginTop: gap('headerFeature') }}>
+            <View style={[styles.sectionTrack, { marginTop: gap('headerFeature') }]}>
               {isWide ? (
                 <View style={styles.featureRow}>
                   <View style={styles.featureCardWrap}>{primaryCard}</View>
@@ -210,11 +238,11 @@ export default function DashboardScreen() {
               )}
             </View>
 
-            <View style={{ marginTop: gap('featureQuick') }}>
+            <View style={[styles.sectionTrack, { marginTop: gap('featureQuick') }]}>
               <SectionHeader title="Quick actions" />
               <QuickActionsGrid columns={quickColumns} gap={QUICK_GAP}>
                 {quickActions.map((action) => (
-                  <IconButton
+                  <DashboardQuickAction
                     key={action.label}
                     emoji={action.emoji}
                     label={action.label}
@@ -226,7 +254,7 @@ export default function DashboardScreen() {
               </QuickActionsGrid>
             </View>
 
-            <View style={{ marginTop: gap('quickToday') }}>
+            <View style={[styles.sectionTrack, { marginTop: gap('quickToday') }]}>
               <SectionHeader
                 title="Today's tiny wins"
                 action={
@@ -244,9 +272,9 @@ export default function DashboardScreen() {
               />
               {todayWins.length ? (
                 todayWins.slice(0, 5).map((win) => (
-                  <GlassCard key={win.id} style={styles.winRow}>
+                  <GlassCard key={win.id} style={[styles.winRow, styles.fullWidthCard]}>
                     <Text style={{ fontSize: 18 }}>✨</Text>
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[styles.winTitle, { color: theme.text }]}>{win.title}</Text>
                       {win.isHardToday ? (
                         <Text style={{ color: theme.accent, ...typography.caption }}>
@@ -260,7 +288,7 @@ export default function DashboardScreen() {
               ) : (
                 <GlassCard
                   onPress={() => router.push('/tiny-wins' as never)}
-                  style={styles.emptyWins}>
+                  style={[styles.emptyWins, styles.fullWidthCard]}>
                   <Text style={[styles.emptyTitle, { color: theme.text }]}>
                     Nothing logged yet — and that is okay.
                   </Text>
@@ -271,13 +299,15 @@ export default function DashboardScreen() {
               )}
             </View>
 
-            <View style={{ marginTop: gap('todayGarden') }}>
-              <GardenPreview />
+            <View style={[styles.sectionTrack, { marginTop: gap('todayGarden') }]}>
+              <View style={styles.fullWidthCard}>
+                <GardenPreview />
+              </View>
             </View>
 
-            <View style={{ marginTop: gap('gardenRecs') }}>
+            <View style={[styles.sectionTrack, { marginTop: gap('gardenRecs') }]}>
               <SectionHeader title="Recommended for you" />
-              <View style={{ gap: QUICK_GAP }}>
+              <View style={styles.recGrid}>
                 {recRows.map((row, rowIndex) => (
                   <View key={`rec-row-${rowIndex}`} style={[styles.recRow, { gap: QUICK_GAP }]}>
                     {row.map((tool) => (
@@ -304,12 +334,22 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   page: {
     width: '100%',
     maxWidth: PAGE_MAX_WIDTH,
     alignSelf: 'center',
+  },
+  sectionTrack: {
+    width: '100%',
+    alignSelf: 'stretch',
+    minWidth: 0,
+  },
+  fullWidthCard: {
+    width: '100%',
+    alignSelf: 'stretch',
+    minWidth: 0,
   },
   header: {
     marginBottom: 0,
@@ -327,6 +367,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     gap: spacing.lg,
+    width: '100%',
+    alignSelf: 'stretch',
   },
   featureCardWrap: {
     flex: 1,
@@ -335,6 +377,8 @@ const styles = StyleSheet.create({
   },
   featureStack: {
     gap: spacing.md,
+    width: '100%',
+    alignSelf: 'stretch',
   },
   fillCard: {
     width: '100%',
@@ -371,10 +415,16 @@ const styles = StyleSheet.create({
     ...typography.caption,
     marginBottom: spacing.sm,
   },
+  quickGrid: {
+    width: '100%',
+    alignSelf: 'stretch',
+    minWidth: 0,
+  },
   quickRow: {
     flexDirection: 'row',
     width: '100%',
     alignItems: 'stretch',
+    alignSelf: 'stretch',
   },
   quickCell: {
     flex: 1,
@@ -383,7 +433,31 @@ const styles = StyleSheet.create({
   },
   quickActionWrap: {
     flex: 1,
+    width: '100%',
     alignSelf: 'stretch',
+    minWidth: 0,
+  },
+  dashboardQuickBtn: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.sm,
+    alignItems: 'center',
+    width: '100%',
+    alignSelf: 'stretch',
+    flex: 1,
+    minWidth: 0,
+  },
+  quickEmoji: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  quickLabel: {
+    ...typography.caption,
+    textAlign: 'center',
+  },
+  quickPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
   },
   headerAction: {
     ...typography.caption,
@@ -410,17 +484,28 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     fontWeight: '700',
   },
+  recGrid: {
+    width: '100%',
+    alignSelf: 'stretch',
+    minWidth: 0,
+    gap: QUICK_GAP,
+  },
   recRow: {
     flexDirection: 'row',
     width: '100%',
     alignItems: 'stretch',
+    alignSelf: 'stretch',
   },
   recCell: {
     flex: 1,
     minWidth: 0,
+    alignSelf: 'stretch',
   },
   recCard: {
     flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    minWidth: 0,
     minHeight: 92,
     justifyContent: 'center',
   },
