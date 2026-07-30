@@ -86,6 +86,61 @@ export function getRecommendedTools(profile: UserProfile | null): ToolDefinition
   return sorted;
 }
 
+export interface GardenMilestoneProgress {
+  currentMinXp: number;
+  nextMinXp: number | null;
+  nextLabel: string | null;
+  progress: number;
+  remainingXp: number;
+  isComplete: boolean;
+}
+
+export function getGardenMilestoneProgress(xpTotal: number): GardenMilestoneProgress {
+  let currentIdx = 0;
+  for (let i = 0; i < gardenStageThresholds.length; i++) {
+    if (xpTotal >= gardenStageThresholds[i].xp) currentIdx = i;
+  }
+
+  const current = gardenStageThresholds[currentIdx];
+  const next = gardenStageThresholds[currentIdx + 1] ?? null;
+
+  if (!next) {
+    return {
+      currentMinXp: current.xp,
+      nextMinXp: null,
+      nextLabel: null,
+      progress: 1,
+      remainingXp: 0,
+      isComplete: true,
+    };
+  }
+
+  const span = next.xp - current.xp;
+  const progress =
+    span > 0 ? Math.min(1, Math.max(0, (xpTotal - current.xp) / span)) : 1;
+
+  return {
+    currentMinXp: current.xp,
+    nextMinXp: next.xp,
+    nextLabel: next.label,
+    progress,
+    remainingXp: Math.max(0, next.xp - xpTotal),
+    isComplete: false,
+  };
+}
+
+export function getDashboardRecommendedTools(
+  profile: UserProfile | null,
+  primaryRoute?: string,
+): ToolDefinition[] {
+  const excludeRoutes = new Set(
+    [primaryRoute, '/garden', '/progress'].filter(Boolean) as string[],
+  );
+  return getRecommendedTools(profile)
+    .filter((tool) => !excludeRoutes.has(tool.route))
+    .slice(0, 3);
+}
+
 export function getTinyQuests(stuckType: StuckType, _energyLevel?: EnergyLevel): string[] {
   return tinyQuests[stuckType] ?? tinyQuests['too-big'];
 }

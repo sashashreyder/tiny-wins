@@ -38,7 +38,7 @@ export default function GardenScreen() {
           </Text>
           <Text style={[styles.sub, { color: theme.textSecondary }]}>{vibe}</Text>
 
-          <GardenScene height={280} />
+          <GardenScene height={280} fit="contain" />
 
           <View style={styles.stats}>
             <XPBadge xp={xpTotal} size="lg" />

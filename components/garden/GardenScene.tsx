@@ -11,7 +11,7 @@ import Svg, { Circle, Ellipse, Path, Rect } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useReducedMotion } from '@/hooks/useAppTheme';
-import { getGardenLevel, getGardenStage } from '@/lib/recommendations';
+import { getGardenLevel, getGardenStage, getGardenMilestoneProgress } from '@/lib/recommendations';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/design-system/GlassCard';
@@ -43,12 +43,24 @@ function Firefly({ x, y, delay }: { x: number; y: number; delay: number }) {
   );
 }
 
-export function GardenScene({ height = 220, compact }: { height?: number; compact?: boolean }) {
+const SCENE_ASPECT = 400 / 220;
+
+export function GardenScene({
+  height = 220,
+  compact,
+  fit = 'cover',
+}: {
+  height?: number;
+  compact?: boolean;
+  fit?: 'cover' | 'contain';
+}) {
   const theme = useAppTheme();
   const xpTotal = useAppStore((s) => s.xpTotal);
   const gardenItems = useAppStore((s) => s.gardenItems);
   const stage = getGardenStage(xpTotal);
   const level = getGardenLevel(xpTotal);
+  const isContain = fit === 'contain';
+  const skyColor = theme.mode === 'dark' ? '#1A1830' : '#EDE7FF';
 
   const showSprout = xpTotal >= 25;
   const showPlant = xpTotal >= 50;
@@ -59,8 +71,25 @@ export function GardenScene({ height = 220, compact }: { height?: number; compac
   const showStars = xpTotal >= 600;
 
   return (
-    <View style={[styles.scene, { height }]}>
-      <Svg width="100%" height={height} viewBox="0 0 400 220" preserveAspectRatio="xMidYMid slice">
+    <View
+      style={[
+        styles.scene,
+        isContain
+          ? {
+              width: '100%',
+              aspectRatio: SCENE_ASPECT,
+              maxWidth: 560,
+              maxHeight: height,
+              alignSelf: 'center',
+              backgroundColor: skyColor,
+            }
+          : { height, backgroundColor: skyColor },
+      ]}>
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 400 220"
+        preserveAspectRatio={isContain ? 'xMidYMid meet' : 'xMidYMid slice'}>
         <Rect x={0} y={0} width={400} height={140} fill={theme.mode === 'dark' ? '#1A1830' : '#EDE7FF'} />
         <Ellipse cx={200} cy={130} rx={220} ry={60} fill={theme.mode === 'dark' ? '#2A2845' : '#D4C4FF'} opacity={0.5} />
         <Ellipse cx={200} cy={170} rx={240} ry={70} fill={theme.mode === 'dark' ? '#3D3855' : '#C8B6FF'} opacity={0.35} />
@@ -156,21 +185,19 @@ export function GardenPreview() {
   const theme = useAppTheme();
   const router = useRouter();
   const xpTotal = useAppStore((s) => s.xpTotal);
-  const xpToNext = useAppStore((s) => {
-    const { getXpToNextLevel } = require('@/lib/recommendations');
-    return getXpToNextLevel(s.xpTotal);
-  });
+  const milestone = getGardenMilestoneProgress(xpTotal);
+
+  const metaText = milestone.isComplete
+    ? 'Your garden is fully grown for now.'
+    : `${milestone.remainingXp} XP to unlock ${milestone.nextLabel} · ${xpTotal} total XP`;
 
   return (
     <GlassCard onPress={() => router.push('/garden' as never)} glow>
       <Text style={[styles.previewTitle, { color: theme.text }]}>
         Your garden grows from invisible effort
       </Text>
-      <GardenScene height={160} compact />
-      <Text style={[styles.previewMeta, { color: theme.textSecondary }]}>
-        {xpToNext > 0 ? `${xpToNext} XP until your next garden item` : 'Your world is blooming ✨'}
-        {' · '}{xpTotal} total XP
-      </Text>
+      <GardenScene height={200} compact fit="contain" />
+      <Text style={[styles.previewMeta, { color: theme.textSecondary }]}>{metaText}</Text>
     </GlassCard>
   );
 }
