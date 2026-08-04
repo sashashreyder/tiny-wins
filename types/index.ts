@@ -57,6 +57,13 @@ export type StuckType =
   | 'opened-everything'
   | 'forgot-what';
 
+export interface StuckTypeOption {
+  id: StuckType;
+  label: string;
+  emoji: string;
+  hint: string;
+}
+
 export type MoodType =
   | 'okay-ish'
   | 'sad'

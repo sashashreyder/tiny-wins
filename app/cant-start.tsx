@@ -9,6 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { AppShell } from '@/components/design-system/AppShell';
 import { GradientButton } from '@/components/design-system/Buttons';
 import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
@@ -17,7 +18,8 @@ import { SupportiveMessage } from '@/components/design-system/Feedback';
 import { AppModal } from '@/components/design-system/Modal';
 import { TinyQuestCard } from '@/components/design-system/Cards';
 import { stuckTypes } from '@/data/content';
-import { getSupportiveMessage, getTinyQuests } from '@/lib/recommendations';
+import { TaskContext, taskFlowTemplates } from '@/data/cantStartFlows';
+import { calculateXP, getSupportiveMessage, getTinyQuests } from '@/lib/recommendations';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { radii, spacing, typography } from '@/lib/theme';
 import { useAppStore } from '@/store/useAppStore';
@@ -25,24 +27,33 @@ import { StuckType, StuckTypeOption } from '@/types';
 
 const STUCK_GRID_COLUMNS = 2;
 const STUCK_GRID_GAP = spacing.md;
-const CONTEXT_MAX_WIDTH = 1000;
+const CONTENT_MAX_WIDTH = 1040;
 const TASK_TEXT_MAX = 100;
+const CHECKLIST_MIN = 1;
+const CHECKLIST_MAX = 6;
+const STEP_XP = calculateXP('tiny-win');
 
-type TooBigStage = 'context' | 'quest';
+type TooBigStage =
+  | 'context'
+  | 'support-choice'
+  | 'single-step'
+  | 'checklist-setup'
+  | 'checklist-active'
+  | 'session-complete';
 
-type TaskContext =
-  | 'screen'
-  | 'physical-home'
-  | 'message-call'
-  | 'self-care'
-  | 'going-somewhere'
-  | 'other';
+type SupportMode = 'single-step' | 'checklist';
 
 type TaskContextOption = {
   id: TaskContext;
   emoji: string;
   label: string;
   description: string;
+};
+
+type ChecklistItem = {
+  id: string;
+  text: string;
+  completed: boolean;
 };
 
 const taskContextOptions: TaskContextOption[] = [
@@ -194,27 +205,6 @@ function suggestTaskContext(text: string): TaskContext | null {
   return null;
 }
 
-function buildContextFirstQuest(context: TaskContext, taskText: string): string {
-  const trimmed = taskText.trim();
-
-  switch (context) {
-    case 'screen':
-      return trimmed
-        ? `Open the file or app for “${trimmed}”.\nYou don’t have to work on it yet.`
-        : 'Open the file, page, or app you need.\nYou don’t have to work on it yet.';
-    case 'physical-home':
-      return 'Go to the place where the task happens.\nYou don’t need to do anything yet.';
-    case 'message-call':
-      return 'Open the conversation or find the contact.\nYou don’t have to reply or call yet.';
-    case 'self-care':
-      return 'Bring one thing you need closer.\nThat is enough for this step.';
-    case 'going-somewhere':
-      return 'Put one thing you’ll need by the door.\nYou don’t have to leave yet.';
-    case 'other':
-      return 'Bring the task one small step closer.\nYou don’t have to begin the whole thing.';
-  }
-}
-
 function suggestionNote(context: TaskContext): string {
   switch (context) {
     case 'screen':
@@ -230,6 +220,32 @@ function suggestionNote(context: TaskContext): string {
     case 'other':
       return 'Change it if we guessed wrong.';
   }
+}
+
+function makeChecklistDraft(steps: string[]): string[] {
+  return steps.map((step) => step);
+}
+
+function makeChecklistItems(steps: string[]): ChecklistItem[] {
+  return steps.map((text, index) => ({
+    id: `check-${index}-${Date.now()}`,
+    text,
+    completed: false,
+  }));
+}
+
+function InternalBack({ label, onPress }: { label: string; onPress: () => void }) {
+  const theme = useAppTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={8}
+      style={styles.internalBack}>
+      <Text style={[styles.internalBackText, { color: theme.textSecondary }]}>← {label}</Text>
+    </Pressable>
+  );
 }
 
 function StuckOptionsGrid({ children }: { children: React.ReactNode[] }) {
@@ -269,7 +285,7 @@ function StuckOptionCard({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={option.label}
-      style={({ pressed }) => [styles.stuckCardPressable, pressed && styles.stuckCardPressed]}>
+      style={({ pressed }) => [styles.stuckCardPressable, pressed && styles.pressed]}>
       <View
         style={[
           styles.stuckCard,
@@ -308,13 +324,8 @@ function TaskContextCard({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      accessibilityLabel={
-        suggested ? `${option.label}, suggested` : option.label
-      }
-      style={({ pressed }) => [
-        styles.contextCardPressable,
-        pressed && styles.stuckCardPressed,
-      ]}>
+      accessibilityLabel={suggested ? `${option.label}, suggested` : option.label}
+      style={({ pressed }) => [styles.contextCardPressable, pressed && styles.pressed]}>
       <View
         style={[
           styles.contextCard,
@@ -374,10 +385,45 @@ function ContextOptionsGrid({
   );
 }
 
+function SupportChoiceCard({
+  icon,
+  title,
+  description,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      style={({ pressed }) => [styles.supportCardPressable, pressed && styles.pressed]}>
+      <View
+        style={[
+          styles.supportCard,
+          { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
+        ]}>
+        <Text style={styles.supportIcon}>{icon}</Text>
+        <Text style={[styles.supportTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.supportDesc, { color: theme.textSecondary }]}>{description}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 export default function CantStartScreen() {
   const theme = useAppTheme();
+  const router = useRouter();
   const { width: viewportWidth } = useWindowDimensions();
   const completeQuest = useAppStore((s) => s.completeCantStartQuest);
+  const addTinyWin = useAppStore((s) => s.addTinyWin);
+  const markAchievementEvent = useAppStore((s) => s.markAchievementEvent);
   const profile = useAppStore((s) => s.userProfile);
 
   const [stuckType, setStuckType] = useState<StuckType | null>(null);
@@ -387,6 +433,20 @@ export default function CantStartScreen() {
   const [taskText, setTaskText] = useState('');
   const [confirmedContext, setConfirmedContext] = useState<TaskContext | null>(null);
   const [confirmedTaskText, setConfirmedTaskText] = useState('');
+  const [lastSupportMode, setLastSupportMode] = useState<SupportMode | null>(null);
+
+  const [singleStepIndex, setSingleStepIndex] = useState(0);
+  const [awardedSingleSteps, setAwardedSingleSteps] = useState<Record<number, boolean>>({});
+  const [singleStepJustDone, setSingleStepJustDone] = useState(false);
+
+  const [checklistDraft, setChecklistDraft] = useState<string[]>([]);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+  const [checklistSetupError, setChecklistSetupError] = useState('');
+
+  const [sessionCompletedSteps, setSessionCompletedSteps] = useState(0);
+  const [sessionXpEarned, setSessionXpEarned] = useState(0);
+  const [hasMarkedCantStart, setHasMarkedCantStart] = useState(false);
+
   const [questIndex, setQuestIndex] = useState(0);
   const [smallerMode, setSmallerMode] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -396,20 +456,21 @@ export default function CantStartScreen() {
   const effectiveContext = manualContext ?? suggestedContext;
   const isTooBigFlow = stuckType === 'too-big';
   const showContextStage = isTooBigFlow && tooBigStage === 'context';
-  const showQuestStage = Boolean(stuckType) && (!isTooBigFlow || tooBigStage === 'quest');
+  const showOtherQuestStage = Boolean(stuckType) && !isTooBigFlow;
+
+  const flowTemplate = confirmedContext ? taskFlowTemplates[confirmedContext] : null;
+  const singleSteps = flowTemplate?.singleSteps ?? [];
+  const winCategory = flowTemplate?.category ?? 'work-study';
 
   const contextColumns =
     viewportWidth >= 1024 ? 3 : viewportWidth >= 700 ? 3 : viewportWidth >= 350 ? 2 : 1;
   const contextGap = viewportWidth >= 1024 ? 16 : viewportWidth >= 350 ? 12 : 10;
+  const supportStacked = viewportWidth < 640;
 
   const quests = useMemo(() => {
-    if (!stuckType) return [];
-    const base = getTinyQuests(stuckType, profile?.energyLevel);
-    if (stuckType === 'too-big' && confirmedContext) {
-      return [buildContextFirstQuest(confirmedContext, confirmedTaskText), ...base];
-    }
-    return base;
-  }, [stuckType, profile?.energyLevel, confirmedContext, confirmedTaskText]);
+    if (!stuckType || stuckType === 'too-big') return [];
+    return getTinyQuests(stuckType, profile?.energyLevel);
+  }, [stuckType, profile?.energyLevel]);
 
   const selectedStuck = stuckTypes.find((s) => s.id === stuckType);
   const selectedContextOption = taskContextOptions.find((o) => o.id === confirmedContext);
@@ -418,21 +479,40 @@ export default function CantStartScreen() {
     ? quest.split('.')[0] + ". That's literally it."
     : quest;
 
-  const handleComplete = () => {
-    completeQuest(quest, stuckType!);
-    setMessage(getSupportiveMessage('start'));
-    setShowSuccess(true);
+  const checklistCompleteCount = checklistItems.filter((item) => item.completed).length;
+  const nextIncompleteIndex = checklistItems.findIndex((item) => !item.completed);
+
+  const awardStepWin = (title: string) => {
+    addTinyWin(title.slice(0, 80) || 'Started while stuck', winCategory, false);
+    setSessionCompletedSteps((n) => n + 1);
+    setSessionXpEarned((xp) => xp + STEP_XP);
+    if (!hasMarkedCantStart) {
+      markAchievementEvent('cant-start-quest');
+      setHasMarkedCantStart(true);
+    }
   };
 
-  const resetTooBigLocalState = (keepTaskText = false) => {
+  const resetSessionProgress = () => {
+    setSingleStepIndex(0);
+    setAwardedSingleSteps({});
+    setSingleStepJustDone(false);
+    setChecklistDraft([]);
+    setChecklistItems([]);
+    setChecklistSetupError('');
+    setSessionCompletedSteps(0);
+    setSessionXpEarned(0);
+    setHasMarkedCantStart(false);
+    setLastSupportMode(null);
+  };
+
+  const resetTooBigLocalState = () => {
     setTooBigStage('context');
     setManualContext(null);
     setSuggestedContext(null);
     setConfirmedContext(null);
     setConfirmedTaskText('');
-    if (!keepTaskText) setTaskText('');
-    setQuestIndex(0);
-    setSmallerMode(false);
+    setTaskText('');
+    resetSessionProgress();
   };
 
   const selectStuckType = (type: StuckType) => {
@@ -442,12 +522,13 @@ export default function CantStartScreen() {
     if (type === 'too-big') {
       resetTooBigLocalState();
     } else {
-      setTooBigStage('quest');
+      setTooBigStage('context');
       setManualContext(null);
       setSuggestedContext(null);
       setConfirmedContext(null);
       setConfirmedTaskText('');
       setTaskText('');
+      resetSessionProgress();
     }
   };
 
@@ -459,25 +540,141 @@ export default function CantStartScreen() {
   const handleTaskTextChange = (value: string) => {
     const next = value.slice(0, TASK_TEXT_MAX);
     setTaskText(next);
-    const suggestion = suggestTaskContext(next);
-    setSuggestedContext(suggestion);
+    setSuggestedContext(suggestTaskContext(next));
   };
 
-  const handleContinueToQuest = () => {
+  const handleContinueToSupportChoice = () => {
     if (!effectiveContext) return;
     setConfirmedContext(effectiveContext);
     setConfirmedTaskText(taskText.trim());
-    setQuestIndex(0);
-    setSmallerMode(false);
-    setTooBigStage('quest');
+    setTooBigStage('support-choice');
   };
 
-  const handleChangeTaskContext = () => {
-    setTooBigStage('context');
-    setQuestIndex(0);
-    setSmallerMode(false);
-    // Preserve typed task text; keep manual/suggested so cards stay selected.
+  const startSingleStepMode = () => {
+    setLastSupportMode('single-step');
+    setSingleStepIndex(0);
+    setSingleStepJustDone(false);
+    setTooBigStage('single-step');
   };
+
+  const startChecklistSetup = () => {
+    if (!confirmedContext) return;
+    setLastSupportMode('checklist');
+    setChecklistDraft(makeChecklistDraft(taskFlowTemplates[confirmedContext].checklistSteps));
+    setChecklistSetupError('');
+    setTooBigStage('checklist-setup');
+  };
+
+  const handleSingleStepDone = () => {
+    if (awardedSingleSteps[singleStepIndex]) return;
+    const stepText = singleSteps[singleStepIndex];
+    if (!stepText) return;
+    awardStepWin(stepText);
+    setAwardedSingleSteps((prev) => ({ ...prev, [singleStepIndex]: true }));
+    setSingleStepJustDone(true);
+  };
+
+  const handleSingleStepSkip = () => {
+    if (singleStepIndex >= singleSteps.length - 1) {
+      setTooBigStage('session-complete');
+      return;
+    }
+    setSingleStepIndex((i) => i + 1);
+    setSingleStepJustDone(false);
+  };
+
+  const handleGiveNextStep = () => {
+    if (singleStepIndex >= singleSteps.length - 1) {
+      setTooBigStage('session-complete');
+      return;
+    }
+    setSingleStepIndex((i) => i + 1);
+    setSingleStepJustDone(false);
+  };
+
+  const updateChecklistDraft = (index: number, value: string) => {
+    setChecklistDraft((prev) => prev.map((step, i) => (i === index ? value : step)));
+  };
+
+  const removeChecklistDraftStep = (index: number) => {
+    setChecklistDraft((prev) => {
+      if (prev.length <= CHECKLIST_MIN) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const addChecklistDraftStep = () => {
+    setChecklistDraft((prev) => {
+      if (prev.length >= CHECKLIST_MAX) return prev;
+      return [...prev, ''];
+    });
+  };
+
+  const resetChecklistExample = () => {
+    if (!confirmedContext) return;
+    setChecklistDraft(makeChecklistDraft(taskFlowTemplates[confirmedContext].checklistSteps));
+    setChecklistSetupError('');
+  };
+
+  const startChecklist = () => {
+    const cleaned = checklistDraft.map((step) => step.trim()).filter(Boolean);
+    if (cleaned.length < CHECKLIST_MIN) {
+      setChecklistSetupError('Add at least one step before starting.');
+      return;
+    }
+    if (cleaned.length > CHECKLIST_MAX) {
+      setChecklistSetupError(`Keep it to ${CHECKLIST_MAX} steps or fewer.`);
+      return;
+    }
+    setChecklistSetupError('');
+    setChecklistItems(makeChecklistItems(cleaned));
+    setTooBigStage('checklist-active');
+  };
+
+  const completeChecklistItem = (id: string) => {
+    const item = checklistItems.find((row) => row.id === id);
+    if (!item || item.completed) return;
+
+    awardStepWin(item.text);
+
+    const nextItems = checklistItems.map((row) =>
+      row.id === id ? { ...row, completed: true } : row,
+    );
+    setChecklistItems(nextItems);
+
+    if (nextItems.every((row) => row.completed)) {
+      setTooBigStage('session-complete');
+    }
+  };
+
+  const editOrRestartChecklist = () => {
+    setChecklistDraft(
+      checklistItems.length
+        ? checklistItems.map((item) => item.text)
+        : confirmedContext
+          ? makeChecklistDraft(taskFlowTemplates[confirmedContext].checklistSteps)
+          : [],
+    );
+    setChecklistSetupError('');
+    setTooBigStage('checklist-setup');
+  };
+
+  const keepWorkingHere = () => {
+    if (lastSupportMode === 'checklist') {
+      setTooBigStage(checklistItems.length ? 'checklist-active' : 'checklist-setup');
+      return;
+    }
+    setTooBigStage('single-step');
+    setSingleStepJustDone(false);
+  };
+
+  const handleOtherComplete = () => {
+    completeQuest(quest, stuckType!);
+    setMessage(getSupportiveMessage('start'));
+    setShowSuccess(true);
+  };
+
+  const compactBtn = styles.compactBtn;
 
   return (
     <AppShell title="I Can't Start">
@@ -485,17 +682,12 @@ export default function CantStartScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}>
-          {!showContextStage ? (
-            <>
+          {!stuckType ? (
+            <View style={styles.selectionStage}>
               <Text style={[styles.headline, { color: theme.text }]}>Starting is a task too.</Text>
               <Text style={[styles.sub, { color: theme.textSecondary }]}>
                 No pressure. Pick what kind of stuck you're in.
               </Text>
-            </>
-          ) : null}
-
-          {!stuckType ? (
-            <View style={styles.selectionStage}>
               <SectionHeader
                 title="What kind of stuck is it?"
                 subtitle="Choose the one that fits best. We'll give you one tiny next step."
@@ -513,15 +705,14 @@ export default function CantStartScreen() {
           ) : null}
 
           {showContextStage ? (
-            <View style={styles.contextStage}>
-              <View style={styles.contextInner}>
-                <Text style={[styles.contextEyebrow, { color: theme.textMuted }]}>
-                  TASK FEELS TOO BIG
-                </Text>
-                <Text style={[styles.contextTitle, { color: theme.text }]}>
+            <View style={styles.stageShell}>
+              <View style={styles.stageInner}>
+                <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>TASK FEELS TOO BIG</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
                   What are you trying to start?
                 </Text>
-                <Text style={[styles.contextSupport, { color: theme.textSecondary }]}>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
                   Pick the closest match, or describe it in a few words. We'll use it to suggest a
                   smaller first step.
                 </Text>
@@ -530,9 +721,7 @@ export default function CantStartScreen() {
                   {taskContextOptions.map((option) => {
                     const selected = effectiveContext === option.id;
                     const isSuggestedOnly =
-                      !manualContext &&
-                      suggestedContext === option.id &&
-                      selected;
+                      !manualContext && suggestedContext === option.id && selected;
                     return (
                       <TaskContextCard
                         key={option.id}
@@ -581,35 +770,429 @@ export default function CantStartScreen() {
                     style={[
                       styles.continueBtnOuter,
                       !effectiveContext && styles.continueDisabled,
-                    ]}
-                    accessibilityState={{ disabled: !effectiveContext }}>
+                    ]}>
                     <GradientButton
                       label="Find my starting point"
                       onPress={() => {
                         if (!effectiveContext) return;
-                        handleContinueToQuest();
+                        handleContinueToSupportChoice();
                       }}
                       small
                       style={styles.continueBtn}
                     />
                   </View>
                 </View>
-
-                <Pressable
-                  onPress={returnToStuckTypes}
-                  accessibilityRole="button"
-                  accessibilityLabel="Choose a different stuck type"
-                  style={styles.quietAction}>
-                  <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
-                    Choose a different stuck type
-                  </Text>
-                </Pressable>
               </View>
             </View>
           ) : null}
 
-          {showQuestStage ? (
+          {isTooBigFlow && tooBigStage === 'support-choice' ? (
+            <View style={styles.stageShell}>
+              <View style={styles.stageInner}>
+                <InternalBack
+                  label="Back to task context"
+                  onPress={() => setTooBigStage('context')}
+                />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>TASK FEELS TOO BIG</Text>
+                {confirmedTaskText ? (
+                  <Text style={[styles.taskSummary, { color: theme.textSecondary }]}>
+                    Working on: {confirmedTaskText}
+                  </Text>
+                ) : null}
+                {selectedContextOption ? (
+                  <Text style={[styles.taskSummary, { color: theme.textMuted }]}>
+                    {selectedContextOption.emoji} {selectedContextOption.label}
+                  </Text>
+                ) : null}
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  How should we make this easier?
+                </Text>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                  Choose the kind of help that feels manageable right now.
+                </Text>
+
+                <View
+                  style={[
+                    styles.supportRow,
+                    supportStacked && styles.supportRowStacked,
+                    { gap: supportStacked ? spacing.md : spacing.lg },
+                  ]}>
+                  <SupportChoiceCard
+                    icon="→"
+                    title="Give me one next step"
+                    description="Show me only one thing at a time."
+                    onPress={startSingleStepMode}
+                  />
+                  <SupportChoiceCard
+                    icon="✓"
+                    title="Build a tiny checklist"
+                    description="Turn this into a short plan I can adjust."
+                    onPress={startChecklistSetup}
+                  />
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isTooBigFlow && tooBigStage === 'single-step' && flowTemplate ? (
+            <View style={styles.stageShell}>
+              <View style={styles.stageInner}>
+                <InternalBack
+                  label="Back to help options"
+                  onPress={() => {
+                    setSingleStepJustDone(false);
+                    setTooBigStage('support-choice');
+                  }}
+                />
+
+                {selectedContextOption ? (
+                  <Text style={[styles.taskSummary, { color: theme.textMuted }]}>
+                    {selectedContextOption.emoji} {selectedContextOption.label}
+                    {confirmedTaskText ? ` · ${confirmedTaskText}` : ''}
+                  </Text>
+                ) : null}
+
+                {singleStepJustDone ? (
+                  <GlassCard style={styles.panelCard}>
+                    <Text style={[styles.panelTitle, { color: theme.text }]}>
+                      That moved the task forward.
+                    </Text>
+                    <Text style={[styles.panelBody, { color: theme.textSecondary }]}>
+                      Small progress is still real progress.
+                    </Text>
+                    <View style={styles.actionStack}>
+                      {singleStepIndex < singleSteps.length - 1 ? (
+                        <View style={compactBtn}>
+                          <GradientButton
+                            label="Give me the next step"
+                            onPress={handleGiveNextStep}
+                            small
+                          />
+                        </View>
+                      ) : (
+                        <View style={compactBtn}>
+                          <GradientButton
+                            label="That was enough for now"
+                            onPress={() => setTooBigStage('session-complete')}
+                            small
+                          />
+                        </View>
+                      )}
+                      <GradientButton
+                        label="Build a checklist instead"
+                        onPress={startChecklistSetup}
+                        variant="secondary"
+                        small
+                        style={compactBtn}
+                      />
+                      {singleStepIndex < singleSteps.length - 1 ? (
+                        <Pressable
+                          onPress={() => setTooBigStage('session-complete')}
+                          accessibilityRole="button"
+                          style={styles.quietAction}>
+                          <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                            That was enough for now
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </GlassCard>
+                ) : (
+                  <GlassCard style={styles.panelCard}>
+                    <Text style={[styles.stepLabel, { color: theme.textMuted }]}>
+                      YOUR NEXT TINY STEP
+                    </Text>
+                    <Text style={[styles.stepProgress, { color: theme.textSecondary }]}>
+                      Step {singleStepIndex + 1} of {singleSteps.length}
+                    </Text>
+                    <Text style={[styles.stepText, { color: theme.text }]}>
+                      {singleSteps[singleStepIndex]}
+                    </Text>
+
+                    <View style={styles.actionStack}>
+                      <View style={compactBtn}>
+                        <GradientButton
+                          label={`I did this · +${STEP_XP} XP`}
+                          onPress={handleSingleStepDone}
+                          small
+                        />
+                      </View>
+                      <Pressable
+                        onPress={handleSingleStepSkip}
+                        accessibilityRole="button"
+                        style={styles.quietAction}>
+                        <Text style={[styles.quietActionText, { color: theme.textSecondary }]}>
+                          This step doesn’t fit
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setTooBigStage('support-choice')}
+                        accessibilityRole="button"
+                        style={styles.quietAction}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Back to help options
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </GlassCard>
+                )}
+              </View>
+            </View>
+          ) : null}
+
+          {isTooBigFlow && tooBigStage === 'checklist-setup' && confirmedContext ? (
+            <View style={styles.stageShell}>
+              <View style={styles.stageInner}>
+                <InternalBack
+                  label="Back to help options"
+                  onPress={() => setTooBigStage('support-choice')}
+                />
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Let’s make this smaller.
+                </Text>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                  Use this example, or change the steps so they fit your task.
+                </Text>
+                {confirmedTaskText ? (
+                  <Text style={[styles.taskSummary, { color: theme.textMuted }]}>
+                    Working on: {confirmedTaskText}
+                  </Text>
+                ) : null}
+
+                <View style={styles.checklistEditor}>
+                  {checklistDraft.map((step, index) => (
+                    <View key={`draft-${index}`} style={styles.draftRow}>
+                      <TextInput
+                        value={step}
+                        onChangeText={(value) => updateChecklistDraft(index, value)}
+                        placeholder={`Step ${index + 1}`}
+                        placeholderTextColor={theme.textMuted}
+                        accessibilityLabel={`Checklist step ${index + 1}`}
+                        style={[
+                          styles.draftInput,
+                          {
+                            color: theme.text,
+                            backgroundColor: theme.surface,
+                            borderColor: theme.surfaceBorder,
+                          },
+                        ]}
+                      />
+                      <Pressable
+                        onPress={() => removeChecklistDraftStep(index)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete step ${index + 1}`}
+                        disabled={checklistDraft.length <= CHECKLIST_MIN}
+                        style={[
+                          styles.deleteStepBtn,
+                          checklistDraft.length <= CHECKLIST_MIN && { opacity: 0.35 },
+                        ]}>
+                        <Text style={{ color: theme.textMuted, fontWeight: '700' }}>✕</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+
+                {checklistDraft.length < CHECKLIST_MAX ? (
+                  <Pressable
+                    onPress={addChecklistDraftStep}
+                    accessibilityRole="button"
+                    style={styles.quietActionLeft}>
+                    <Text style={[styles.quietActionText, { color: theme.accentSecondary }]}>
+                      + Add another step
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                {checklistSetupError ? (
+                  <Text style={[styles.setupError, { color: theme.accent }]}>
+                    {checklistSetupError}
+                  </Text>
+                ) : null}
+
+                <View style={styles.actionStack}>
+                  <View style={compactBtn}>
+                    <GradientButton label="Start this checklist" onPress={startChecklist} small />
+                  </View>
+                  <GradientButton
+                    label="Reset example"
+                    onPress={resetChecklistExample}
+                    variant="ghost"
+                    small
+                    style={compactBtn}
+                  />
+                  <Pressable
+                    onPress={() => setTooBigStage('support-choice')}
+                    accessibilityRole="button"
+                    style={styles.quietAction}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      Back to help options
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isTooBigFlow && tooBigStage === 'checklist-active' ? (
+            <View style={styles.stageShell}>
+              <View style={styles.stageInner}>
+                <InternalBack
+                  label="Back to help options"
+                  onPress={() => setTooBigStage('support-choice')}
+                />
+                <Text style={[styles.stageTitle, { color: theme.text }]}>Your tiny checklist</Text>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                  {checklistCompleteCount} of {checklistItems.length} complete
+                </Text>
+
+                <View style={styles.checklistActive}>
+                  {checklistItems.map((item, index) => {
+                    const isNext = index === nextIncompleteIndex;
+                    return (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.checkRow,
+                          {
+                            backgroundColor: theme.surface,
+                            borderColor: isNext ? theme.accent : theme.surfaceBorder,
+                            borderWidth: isNext ? 2 : 1,
+                            opacity: item.completed ? 0.72 : 1,
+                          },
+                        ]}>
+                        <Pressable
+                          onPress={() => completeChecklistItem(item.id)}
+                          disabled={item.completed}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: item.completed, disabled: item.completed }}
+                          accessibilityLabel={item.text}
+                          style={[
+                            styles.checkbox,
+                            {
+                              borderColor: item.completed ? theme.accentSecondary : theme.surfaceBorder,
+                              backgroundColor: item.completed
+                                ? theme.accentSecondary + '55'
+                                : 'transparent',
+                            },
+                          ]}>
+                          {item.completed ? (
+                            <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text>
+                          ) : null}
+                        </Pressable>
+                        <Text
+                          style={[
+                            styles.checkText,
+                            {
+                              color: theme.text,
+                              textDecorationLine: item.completed ? 'line-through' : 'none',
+                            },
+                          ]}>
+                          {item.text}
+                        </Text>
+                        {!item.completed ? (
+                          <Pressable
+                            onPress={() => completeChecklistItem(item.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Mark done: ${item.text}`}>
+                            <Text style={[styles.markDone, { color: theme.accentSecondary }]}>
+                              Mark done
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.actionStack}>
+                  <View style={compactBtn}>
+                    <GradientButton
+                      label="That’s enough for now"
+                      onPress={() => setTooBigStage('session-complete')}
+                      small
+                    />
+                  </View>
+                  <GradientButton
+                    label="Edit or restart checklist"
+                    onPress={editOrRestartChecklist}
+                    variant="ghost"
+                    small
+                    style={compactBtn}
+                  />
+                  <Pressable
+                    onPress={() => setTooBigStage('support-choice')}
+                    accessibilityRole="button"
+                    style={styles.quietAction}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      Back to help options
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isTooBigFlow && tooBigStage === 'session-complete' ? (
+            <View style={styles.stageShell}>
+              <View style={styles.stageInner}>
+                <GlassCard style={styles.panelCard}>
+                  <Text style={[styles.panelTitle, { color: theme.text }]}>
+                    {sessionCompletedSteps > 0
+                      ? 'You moved the task forward.'
+                      : 'That’s okay. You can come back later.'}
+                  </Text>
+                  <Text style={[styles.panelBody, { color: theme.textSecondary }]}>
+                    {sessionCompletedSteps > 0
+                      ? 'Small progress is still real progress.'
+                      : 'Choosing to pause counts too.'}
+                  </Text>
+                  {sessionCompletedSteps > 0 ? (
+                    <View style={styles.sessionStats}>
+                      <Text style={[styles.sessionStat, { color: theme.text }]}>
+                        {sessionCompletedSteps} step{sessionCompletedSteps === 1 ? '' : 's'}{' '}
+                        completed
+                      </Text>
+                      <Text style={[styles.sessionStat, { color: theme.text }]}>
+                        +{sessionXpEarned} XP earned
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.actionStack}>
+                    <View style={compactBtn}>
+                      <GradientButton
+                        label="Back to dashboard"
+                        onPress={() => router.push('/dashboard' as never)}
+                        small
+                      />
+                    </View>
+                    <GradientButton
+                      label="Choose another stuck type"
+                      onPress={returnToStuckTypes}
+                      variant="secondary"
+                      small
+                      style={compactBtn}
+                    />
+                    <Pressable
+                      onPress={keepWorkingHere}
+                      accessibilityRole="button"
+                      style={styles.quietAction}>
+                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                        Keep working here
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
+          {showOtherQuestStage ? (
             <>
+              <Text style={[styles.headline, { color: theme.text }]}>Starting is a task too.</Text>
+              <Text style={[styles.sub, { color: theme.textSecondary }]}>
+                No pressure. Pick what kind of stuck you're in.
+              </Text>
               <GlassCard style={styles.stuckSelected}>
                 <Text style={{ color: theme.textSecondary, ...typography.caption }}>Stuck type</Text>
                 <View style={styles.stuckSelectedRow}>
@@ -624,36 +1207,11 @@ export default function CantStartScreen() {
                     {selectedStuck?.label}
                   </Text>
                 </View>
-
-                {isTooBigFlow && selectedContextOption ? (
-                  <View style={styles.contextSummary}>
-                    <Text style={[styles.contextSummaryLine, { color: theme.text }]}>
-                      {selectedContextOption.emoji} {selectedContextOption.label}
-                    </Text>
-                    {confirmedTaskText ? (
-                      <Text
-                        style={[styles.contextSummaryTask, { color: theme.textSecondary }]}
-                        numberOfLines={2}>
-                        {confirmedTaskText}
-                      </Text>
-                    ) : null}
-                    <Pressable
-                      onPress={handleChangeTaskContext}
-                      accessibilityRole="button"
-                      accessibilityLabel="Change task context"
-                      hitSlop={8}
-                      style={styles.changeContextBtn}>
-                      <Text style={[styles.changeContextText, { color: theme.accentSecondary }]}>
-                        Change task context
-                      </Text>
-                    </Pressable>
-                  </View>
-                ) : null}
               </GlassCard>
 
               <TinyQuestCard
                 quest={displayQuest}
-                onComplete={handleComplete}
+                onComplete={handleOtherComplete}
                 onSmaller={() => setSmallerMode(true)}
                 onAnother={() => setQuestIndex((i) => (i + 1) % quests.length)}
               />
@@ -719,7 +1277,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignSelf: 'stretch',
   },
-  stuckCardPressed: {
+  pressed: {
     opacity: 0.88,
     transform: [{ scale: 0.985 }],
   },
@@ -756,28 +1314,41 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 26,
   },
-  contextStage: {
+  stageShell: {
     width: '100%',
     alignItems: 'center',
   },
-  contextInner: {
+  stageInner: {
     width: '100%',
-    maxWidth: CONTEXT_MAX_WIDTH,
+    maxWidth: CONTENT_MAX_WIDTH,
     alignSelf: 'center',
   },
-  contextEyebrow: {
+  internalBack: {
+    alignSelf: 'flex-start',
+    marginBottom: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  internalBackText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+  },
+  eyebrow: {
     ...typography.caption,
     fontWeight: '700',
     letterSpacing: 0.8,
     marginBottom: spacing.sm,
   },
-  contextTitle: {
+  stageTitle: {
     ...typography.h1,
     marginBottom: spacing.sm,
   },
-  contextSupport: {
+  stageSupport: {
     ...typography.body,
     marginBottom: spacing.lg,
+  },
+  taskSummary: {
+    ...typography.bodySmall,
+    marginBottom: spacing.sm,
   },
   contextGrid: {
     width: '100%',
@@ -851,9 +1422,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: Platform.OS === 'web' ? 12 : spacing.sm + 2,
     ...typography.body,
-    ...(Platform.OS === 'web'
-      ? ({ outlineStyle: 'none' } as object)
-      : null),
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null),
   },
   taskInputFocused: {
     ...(Platform.OS === 'web'
@@ -876,9 +1445,77 @@ const styles = StyleSheet.create({
   continueDisabled: {
     opacity: 0.45,
   },
-  quietAction: {
+  supportRow: {
+    flexDirection: 'row',
+    width: '100%',
+    alignItems: 'stretch',
+  },
+  supportRowStacked: {
+    flexDirection: 'column',
+  },
+  supportCardPressable: {
+    flex: 1,
+    minWidth: 0,
+    alignSelf: 'stretch',
+  },
+  supportCard: {
+    flex: 1,
+    minHeight: 140,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    justifyContent: 'center',
+  },
+  supportIcon: {
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '700',
+  },
+  supportTitle: {
+    ...typography.h3,
+  },
+  supportDesc: {
+    ...typography.bodySmall,
+  },
+  panelCard: {
+    gap: spacing.sm,
+  },
+  panelTitle: {
+    ...typography.h2,
+  },
+  panelBody: {
+    ...typography.body,
+    marginBottom: spacing.sm,
+  },
+  stepLabel: {
+    ...typography.caption,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  stepProgress: {
+    ...typography.caption,
+    marginBottom: spacing.sm,
+  },
+  stepText: {
+    ...typography.h2,
+    marginBottom: spacing.md,
+  },
+  actionStack: {
     marginTop: spacing.md,
+    gap: spacing.sm,
     alignItems: 'center',
+  },
+  compactBtn: {
+    width: '100%',
+    maxWidth: 280,
+  },
+  quietAction: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  quietActionLeft: {
+    alignSelf: 'flex-start',
     paddingVertical: spacing.sm,
   },
   quietActionText: {
@@ -886,23 +1523,71 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
-  contextSummary: {
-    marginTop: spacing.sm,
-    gap: 4,
+  checklistEditor: {
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  contextSummaryLine: {
-    ...typography.bodySmall,
-    fontWeight: '600',
+  draftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  contextSummaryTask: {
+  draftInput: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: Platform.OS === 'web' ? 12 : spacing.sm + 2,
+    ...typography.body,
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null),
+  },
+  deleteStepBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setupError: {
     ...typography.caption,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
   },
-  changeContextBtn: {
-    marginTop: 4,
-    alignSelf: 'flex-start',
+  checklistActive: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  changeContextText: {
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radii.md,
+    padding: spacing.md,
+  },
+  checkbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkText: {
+    ...typography.body,
+    flex: 1,
+    minWidth: 0,
+  },
+  markDone: {
     ...typography.caption,
     fontWeight: '700',
+  },
+  sessionStats: {
+    gap: 4,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  sessionStat: {
+    ...typography.body,
+    fontWeight: '600',
   },
 });
