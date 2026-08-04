@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -30,9 +30,29 @@ const STUCK_GRID_GAP = spacing.md;
 const CONTENT_MAX_WIDTH = 1040;
 const CHECKLIST_DESKTOP_MAX_WIDTH = 860;
 const CHECKLIST_NARROW_BREAKPOINT = 900;
+const SUCCESS_DESKTOP_MAX_WIDTH = 820;
 const TASK_TEXT_MAX = 100;
 const CHECKLIST_MAX = 6;
 const STEP_XP = calculateXP('tiny-win');
+
+const COMPLETION_HEADLINES = [
+  'You did it!',
+  'Nice job — that counts.',
+  'You moved the task forward!',
+  'Small step, real progress.',
+  'You showed up — that matters.',
+  'That was a real win.',
+];
+
+const COMPLETION_SUPPORT_LINES = [
+  'Small progress is still real progress.',
+  'You didn’t have to finish everything to make it count.',
+  'Tiny effort still moves your day forward.',
+];
+
+function pickRandom<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
 
 type TooBigStage = 'context' | 'checklist-active' | 'session-complete';
 
@@ -553,6 +573,10 @@ export default function CantStartScreen() {
   const [sessionCompletedSteps, setSessionCompletedSteps] = useState(0);
   const [sessionXpEarned, setSessionXpEarned] = useState(0);
   const [hasMarkedCantStart, setHasMarkedCantStart] = useState(false);
+  const [sessionCompleteCopy, setSessionCompleteCopy] = useState<{
+    headline: string;
+    support: string;
+  } | null>(null);
 
   const [questIndex, setQuestIndex] = useState(0);
   const [smallerMode, setSmallerMode] = useState(false);
@@ -572,6 +596,7 @@ export default function CantStartScreen() {
     viewportWidth >= 1024 ? 3 : viewportWidth >= 700 ? 3 : viewportWidth >= 350 ? 2 : 1;
   const contextGap = viewportWidth >= 1024 ? 16 : viewportWidth >= 350 ? 12 : 10;
   const isChecklistNarrow = viewportWidth >= CHECKLIST_NARROW_BREAKPOINT;
+  const isSuccessNarrow = viewportWidth >= CHECKLIST_NARROW_BREAKPOINT;
   const isDesktopLayout = viewportWidth >= 768;
   const checklistTitleStyle = {
     fontSize: isDesktopLayout ? 40 : 32,
@@ -599,6 +624,16 @@ export default function CantStartScreen() {
   const checklistCompleteCount = checklistItems.filter((item) => item.completed).length;
   const nextIncompleteIndex = checklistItems.findIndex((item) => !item.completed);
 
+  useEffect(() => {
+    if (tooBigStage !== 'session-complete' || sessionCompletedSteps <= 0 || sessionCompleteCopy) {
+      return;
+    }
+    setSessionCompleteCopy({
+      headline: pickRandom(COMPLETION_HEADLINES),
+      support: pickRandom(COMPLETION_SUPPORT_LINES),
+    });
+  }, [tooBigStage, sessionCompletedSteps, sessionCompleteCopy]);
+
   const awardStepWin = (title: string) => {
     addTinyWin(title.slice(0, 80) || 'Started while stuck', winCategory, false);
     setSessionCompletedSteps((n) => n + 1);
@@ -616,6 +651,7 @@ export default function CantStartScreen() {
     setSessionCompletedSteps(0);
     setSessionXpEarned(0);
     setHasMarkedCantStart(false);
+    setSessionCompleteCopy(null);
   };
 
   const resetTooBigLocalState = () => {
@@ -665,6 +701,7 @@ export default function CantStartScreen() {
     setSessionCompletedSteps(0);
     setSessionXpEarned(0);
     setHasMarkedCantStart(false);
+    setSessionCompleteCopy(null);
     setChecklistItems(makeChecklistItems(taskFlowTemplates[context].checklistSteps));
     setTooBigStage('checklist-active');
   };
@@ -744,6 +781,10 @@ export default function CantStartScreen() {
   };
 
   const keepWorkingHere = () => {
+    setTooBigStage('checklist-active');
+  };
+
+  const backToChecklist = () => {
     setTooBigStage('checklist-active');
   };
 
@@ -981,54 +1022,111 @@ export default function CantStartScreen() {
           {isTooBigFlow && tooBigStage === 'session-complete' ? (
             <View style={styles.stageShell}>
               <View style={styles.stageInner}>
-                <GlassCard style={styles.panelCard}>
-                  <Text style={[styles.panelTitle, { color: theme.text }]}>
-                    {sessionCompletedSteps > 0
-                      ? 'You moved the task forward.'
-                      : 'That’s okay. You can come back later.'}
-                  </Text>
-                  <Text style={[styles.panelBody, { color: theme.textSecondary }]}>
-                    {sessionCompletedSteps > 0
-                      ? 'Small progress is still real progress.'
-                      : 'Choosing to pause counts too.'}
-                  </Text>
-                  {sessionCompletedSteps > 0 ? (
-                    <View style={styles.sessionStats}>
-                      <Text style={[styles.sessionStat, { color: theme.text }]}>
-                        {sessionCompletedSteps} step{sessionCompletedSteps === 1 ? '' : 's'}{' '}
-                        completed
-                      </Text>
-                      <Text style={[styles.sessionStat, { color: theme.text }]}>
-                        +{sessionXpEarned} XP earned
-                      </Text>
-                    </View>
-                  ) : null}
+                <View
+                  style={[
+                    styles.successInner,
+                    isSuccessNarrow && styles.successInnerDesktop,
+                  ]}>
+                  <Pressable
+                    onPress={backToChecklist}
+                    accessibilityRole="button"
+                    accessibilityLabel="Back to checklist"
+                    style={styles.checklistBack}>
+                    <Text
+                      style={[
+                        styles.checklistBackText,
+                        isSuccessNarrow
+                          ? styles.checklistBackTextDesktop
+                          : styles.checklistBackTextMobile,
+                        { color: theme.textSecondary },
+                      ]}>
+                      ← Back to checklist
+                    </Text>
+                  </Pressable>
 
-                  <View style={styles.actionStack}>
-                    <View style={compactBtn}>
+                  <GlassCard style={styles.successCard}>
+                    {sessionCompletedSteps > 0 ? (
+                      <>
+                        <View
+                          style={[
+                            styles.successBadge,
+                            { backgroundColor: theme.accentSecondary + '28' },
+                          ]}>
+                          <Text style={[styles.successBadgeText, { color: theme.accentSecondary }]}>
+                            ✨ Tiny win recorded
+                          </Text>
+                        </View>
+                        <Text style={[styles.successTitle, { color: theme.text }]}>
+                          {sessionCompleteCopy?.headline ?? COMPLETION_HEADLINES[0]}
+                        </Text>
+                        <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                          {sessionCompleteCopy?.support ?? COMPLETION_SUPPORT_LINES[0]}
+                        </Text>
+                        <View style={styles.sessionStats}>
+                          <Text style={[styles.sessionStat, { color: theme.text }]}>
+                            {sessionCompletedSteps} step{sessionCompletedSteps === 1 ? '' : 's'}{' '}
+                            completed
+                          </Text>
+                          <Text style={[styles.sessionStat, { color: theme.text }]}>
+                            +{sessionXpEarned} XP earned
+                          </Text>
+                          <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
+                            Your garden grows with every tiny step.
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[styles.successTitle, { color: theme.text }]}>
+                          That’s okay. You can come back later.
+                        </Text>
+                        <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                          Choosing to pause counts too.
+                        </Text>
+                      </>
+                    )}
+
+                    <View style={styles.successActions}>
+                      <View style={styles.successBtn}>
+                        <GradientButton
+                          label="Back to dashboard"
+                          onPress={() => router.push('/dashboard' as never)}
+                          small
+                        />
+                      </View>
                       <GradientButton
-                        label="Back to dashboard"
-                        onPress={() => router.push('/dashboard' as never)}
+                        label="Choose another stuck type"
+                        onPress={returnToStuckTypes}
+                        variant="secondary"
                         small
+                        style={styles.successBtn}
                       />
                     </View>
-                    <GradientButton
-                      label="Choose another stuck type"
-                      onPress={returnToStuckTypes}
-                      variant="secondary"
-                      small
-                      style={compactBtn}
-                    />
-                    <Pressable
-                      onPress={keepWorkingHere}
-                      accessibilityRole="button"
-                      style={styles.quietAction}>
-                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
-                        Keep working here
-                      </Text>
-                    </Pressable>
-                  </View>
-                </GlassCard>
+
+                    <View style={styles.successLinks}>
+                      {sessionCompletedSteps > 0 ? (
+                        <Pressable
+                          onPress={() => router.push('/garden' as never)}
+                          accessibilityRole="link"
+                          accessibilityLabel="Check out your garden"
+                          style={({ pressed }) => [styles.successLink, pressed && styles.pressed]}>
+                          <Text style={[styles.successLinkText, { color: theme.accentSecondary }]}>
+                            Check out your garden
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable
+                        onPress={keepWorkingHere}
+                        accessibilityRole="button"
+                        accessibilityLabel="Keep working here"
+                        style={({ pressed }) => [styles.successLink, pressed && styles.pressed]}>
+                        <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                          Keep working here
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </GlassCard>
+                </View>
               </View>
             </View>
           ) : null}
@@ -1354,6 +1452,66 @@ const styles = StyleSheet.create({
   panelCard: {
     gap: spacing.sm,
   },
+  successInner: {
+    width: '100%',
+  },
+  successInnerDesktop: {
+    maxWidth: SUCCESS_DESKTOP_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  successCard: {
+    alignItems: 'center',
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  successBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    marginBottom: spacing.xs,
+  },
+  successBadgeText: {
+    ...typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  successTitle: {
+    ...typography.h2,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  successBody: {
+    ...typography.body,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+    maxWidth: 480,
+  },
+  successActions: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  successBtn: {
+    width: '100%',
+    maxWidth: 320,
+  },
+  successLinks: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  successLink: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  successLinkText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   panelTitle: {
     ...typography.h2,
   },
@@ -1500,12 +1658,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sessionStats: {
-    gap: 4,
+    alignItems: 'center',
+    gap: 6,
     marginTop: spacing.sm,
     marginBottom: spacing.sm,
+    width: '100%',
   },
   sessionStat: {
     ...typography.body,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  gardenNote: {
+    ...typography.bodySmall,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    maxWidth: 360,
   },
 });
