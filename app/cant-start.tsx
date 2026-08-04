@@ -28,6 +28,8 @@ import { StuckType, StuckTypeOption } from '@/types';
 const STUCK_GRID_COLUMNS = 2;
 const STUCK_GRID_GAP = spacing.md;
 const CONTENT_MAX_WIDTH = 1040;
+const CHECKLIST_DESKTOP_MAX_WIDTH = 860;
+const CHECKLIST_NARROW_BREAKPOINT = 900;
 const TASK_TEXT_MAX = 100;
 const CHECKLIST_MAX = 6;
 const STEP_XP = calculateXP('tiny-win');
@@ -379,6 +381,7 @@ function ChecklistRow({
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
+  onDelete,
   stepXp,
 }: {
   item: ChecklistItem;
@@ -390,6 +393,7 @@ function ChecklistRow({
   onStartEdit: () => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
+  onDelete: () => void;
   stepXp: number;
 }) {
   const theme = useAppTheme();
@@ -411,6 +415,9 @@ function ChecklistRow({
           placeholder="Step text"
           placeholderTextColor={theme.textMuted}
           autoFocus
+          returnKeyType="done"
+          blurOnSubmit={false}
+          onSubmitEditing={onSaveEdit}
           accessibilityLabel={`Edit step: ${item.text || 'new step'}`}
           style={[
             styles.editInput,
@@ -494,14 +501,30 @@ function ChecklistRow({
           <Text style={[styles.rowXp, { color: theme.textMuted }]}>+{stepXp} XP</Text>
         </Pressable>
       )}
-      <Pressable
-        onPress={onStartEdit}
-        accessibilityRole="button"
-        accessibilityLabel={`Edit: ${item.text}`}
-        hitSlop={8}
-        style={styles.editBtn}>
-        <Text style={[styles.editIcon, { color: theme.textMuted }]}>✎</Text>
-      </Pressable>
+      <View style={styles.rowActions}>
+        <Pressable
+          onPress={onStartEdit}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accentSecondary + '22' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowEditIcon, { color: theme.accentSecondary }]}>✎</Text>
+        </Pressable>
+        <Pressable
+          onPress={onDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accent + '18' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowDeleteIcon, { color: theme.accent }]}>🗑</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -531,7 +554,6 @@ export default function CantStartScreen() {
   const [sessionXpEarned, setSessionXpEarned] = useState(0);
   const [hasMarkedCantStart, setHasMarkedCantStart] = useState(false);
 
-  const [describeMode, setDescribeMode] = useState(false);
   const [questIndex, setQuestIndex] = useState(0);
   const [smallerMode, setSmallerMode] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -549,6 +571,7 @@ export default function CantStartScreen() {
   const contextColumns =
     viewportWidth >= 1024 ? 3 : viewportWidth >= 700 ? 3 : viewportWidth >= 350 ? 2 : 1;
   const contextGap = viewportWidth >= 1024 ? 16 : viewportWidth >= 350 ? 12 : 10;
+  const isChecklistNarrow = viewportWidth >= CHECKLIST_NARROW_BREAKPOINT;
   const isDesktopLayout = viewportWidth >= 768;
   const checklistTitleStyle = {
     fontSize: isDesktopLayout ? 40 : 32,
@@ -602,7 +625,6 @@ export default function CantStartScreen() {
     setConfirmedContext(null);
     setConfirmedTaskText('');
     setTaskText('');
-    setDescribeMode(false);
     resetSessionProgress();
   };
 
@@ -713,6 +735,14 @@ export default function CantStartScreen() {
     setEditingText('');
   };
 
+  const deleteChecklistItem = (id: string) => {
+    if (editingItemId === id) {
+      setEditingItemId(null);
+      setEditingText('');
+    }
+    setChecklistItems((prev) => prev.filter((row) => row.id !== id));
+  };
+
   const keepWorkingHere = () => {
     setTooBigStage('checklist-active');
   };
@@ -770,70 +800,60 @@ export default function CantStartScreen() {
                     <TaskContextCard
                       key={option.id}
                       option={option}
-                      suggested={describeMode && suggestedContext === option.id}
+                      suggested={
+                        Boolean(suggestedContext && taskText.trim() && suggestedContext === option.id)
+                      }
                       onPress={() => confirmContextAndOpenChecklist(option.id)}
                     />
                   ))}
                 </ContextOptionsGrid>
 
-                {!describeMode ? (
-                  <Pressable
-                    onPress={() => setDescribeMode(true)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Not sure? Describe it in a few words"
-                    style={styles.quietAction}>
-                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
-                      Not sure? Describe it in a few words
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <View style={styles.taskFieldBlock}>
-                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
-                      Describe it in a few words
-                    </Text>
-                    <TextInput
-                      value={taskText}
-                      onChangeText={handleTaskTextChange}
-                      placeholder="e.g. presentation, shower, reply to Ana"
-                      placeholderTextColor={theme.textMuted}
-                      maxLength={TASK_TEXT_MAX}
-                      accessibilityLabel="Describe it in a few words"
-                      onFocus={() => setInputFocused(true)}
-                      onBlur={() => setInputFocused(false)}
-                      style={[
-                        styles.taskInput,
-                        {
-                          color: theme.text,
-                          backgroundColor: theme.surface,
-                          borderColor: inputFocused ? theme.accent : theme.surfaceBorder,
-                        },
-                        inputFocused && styles.taskInputFocused,
-                      ]}
-                    />
+                <View style={styles.taskFieldBlock}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    Or describe it in a few words
+                  </Text>
+                  <TextInput
+                    value={taskText}
+                    onChangeText={handleTaskTextChange}
+                    placeholder="e.g. presentation, shower, reply to Ana"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="Or describe it in a few words"
+                    onFocus={() => setInputFocused(true)}
+                    onBlur={() => setInputFocused(false)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: inputFocused ? theme.accent : theme.surfaceBorder,
+                      },
+                      inputFocused && styles.taskInputFocused,
+                    ]}
+                  />
 
-                    {suggestedContext && suggestedContextOption ? (
-                      <>
-                        <Text style={[styles.suggestionNote, { color: theme.textMuted }]}>
-                          {suggestionNote(suggestedContext)}
-                        </Text>
-                        <View style={styles.continueWrap}>
-                          <View style={styles.continueBtnOuter}>
-                            <GradientButton
-                              label={`Continue with ${suggestedContextOption.label}`}
-                              onPress={() => confirmContextAndOpenChecklist(suggestedContext)}
-                              small
-                              style={styles.continueBtn}
-                            />
-                          </View>
-                        </View>
-                      </>
-                    ) : taskText.trim() ? (
+                  {suggestedContext && suggestedContextOption ? (
+                    <>
                       <Text style={[styles.suggestionNote, { color: theme.textMuted }]}>
-                        We’re not sure yet. Pick the closest option above.
+                        {suggestionNote(suggestedContext)}
                       </Text>
-                    ) : null}
-                  </View>
-                )}
+                      <View style={styles.continueWrap}>
+                        <View style={styles.continueBtnOuter}>
+                          <GradientButton
+                            label={`Continue with ${suggestedContextOption.label}`}
+                            onPress={() => confirmContextAndOpenChecklist(suggestedContext)}
+                            small
+                            style={styles.continueBtn}
+                          />
+                        </View>
+                      </View>
+                    </>
+                  ) : taskText.trim() ? (
+                    <Text style={[styles.suggestionNote, { color: theme.textMuted }]}>
+                      We’re not sure yet. Pick the closest option above.
+                    </Text>
+                  ) : null}
+                </View>
               </View>
             </View>
           ) : null}
@@ -841,70 +861,117 @@ export default function CantStartScreen() {
           {isTooBigFlow && tooBigStage === 'checklist-active' ? (
             <View style={styles.stageShell}>
               <View style={styles.stageInner}>
-                <InternalBack label="Back to task context" onPress={returnToTaskContext} />
-                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>TASK FEELS TOO BIG</Text>
-                {selectedContextOption ? (
-                  <Text style={[styles.taskSummary, { color: theme.textMuted }]}>
-                    {selectedContextOption.emoji} {selectedContextOption.label}
-                  </Text>
-                ) : null}
-                {confirmedTaskText ? (
-                  <Text style={[styles.taskSummary, { color: theme.textSecondary }]}>
-                    {confirmedTaskText}
-                  </Text>
-                ) : null}
-                <Text style={[checklistTitleStyle, { color: theme.text, marginBottom: spacing.sm }]}>
-                  Let&apos;s make this smaller.
-                </Text>
-                <Text
+                <View
                   style={[
-                    checklistSupportStyle,
-                    { color: theme.textSecondary, marginBottom: spacing.lg },
+                    styles.checklistInner,
+                    isChecklistNarrow && styles.checklistInnerDesktop,
                   ]}>
-                  We turned the task into a few tiny steps. Tap a step when it&apos;s done to earn
-                  +{STEP_XP} XP. You can change the steps, add your own, or stop at any time.
-                </Text>
-                <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>
-                  {checklistCompleteCount} of {checklistItems.length} complete
-                </Text>
-
-                <View style={styles.checklistActive}>
-                  {checklistItems.map((item, index) => (
-                    <ChecklistRow
-                      key={item.id}
-                      item={item}
-                      isNext={index === nextIncompleteIndex}
-                      isEditing={editingItemId === item.id}
-                      editingText={editingText}
-                      onEditingTextChange={setEditingText}
-                      onComplete={() => completeChecklistItem(item.id)}
-                      onStartEdit={() => startEditItem(item.id)}
-                      onSaveEdit={() => saveItemEdit(item.id)}
-                      onCancelEdit={() => cancelItemEdit(item.id)}
-                      stepXp={STEP_XP}
-                    />
-                  ))}
-                </View>
-
-                {checklistItems.length < CHECKLIST_MAX && !editingItemId ? (
                   <Pressable
-                    onPress={addChecklistStep}
+                    onPress={returnToTaskContext}
                     accessibilityRole="button"
-                    accessibilityLabel="Add a step"
-                    style={styles.quietActionLeft}>
-                    <Text style={[styles.quietActionText, { color: theme.accentSecondary }]}>
-                      + Add a step
+                    accessibilityLabel="Back to task context"
+                    style={styles.checklistBack}>
+                    <Text
+                      style={[
+                        styles.checklistBackText,
+                        isChecklistNarrow
+                          ? styles.checklistBackTextDesktop
+                          : styles.checklistBackTextMobile,
+                        { color: theme.textSecondary },
+                      ]}>
+                      ← Back to task context
                     </Text>
                   </Pressable>
-                ) : null}
+                  <Text
+                    style={[
+                      styles.checklistEyebrow,
+                      isChecklistNarrow
+                        ? styles.checklistEyebrowDesktop
+                        : styles.checklistEyebrowMobile,
+                      { color: theme.textMuted },
+                    ]}>
+                    TASK FEELS TOO BIG
+                  </Text>
+                  {selectedContextOption ? (
+                    <Text
+                      style={[
+                        styles.checklistContextSummary,
+                        isChecklistNarrow
+                          ? styles.checklistContextSummaryDesktop
+                          : styles.checklistContextSummaryMobile,
+                        { color: theme.text },
+                      ]}>
+                      {selectedContextOption.emoji} {selectedContextOption.label}
+                    </Text>
+                  ) : null}
+                  {confirmedTaskText ? (
+                    <Text style={[styles.checklistTaskNote, { color: theme.textSecondary }]}>
+                      {confirmedTaskText}
+                    </Text>
+                  ) : null}
+                  <Text style={[checklistTitleStyle, { color: theme.text, marginBottom: spacing.sm }]}>
+                    Let&apos;s make this smaller.
+                  </Text>
+                  <Text
+                    style={[
+                      checklistSupportStyle,
+                      { color: theme.textSecondary, marginBottom: spacing.lg },
+                    ]}>
+                    We turned the task into a few tiny steps. Tap a step when it&apos;s done to earn
+                    +{STEP_XP} XP. You can change the steps, add your own, or stop at any time.
+                  </Text>
+                  <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>
+                    {checklistCompleteCount} of {checklistItems.length} complete
+                  </Text>
 
-                <View style={styles.actionStack}>
-                  <View style={compactBtn}>
-                    <GradientButton
-                      label="That’s enough for now"
-                      onPress={() => setTooBigStage('session-complete')}
-                      small
-                    />
+                  {checklistItems.length === 0 ? (
+                    <Text style={[styles.checklistEmpty, { color: theme.textMuted }]}>
+                      No steps yet. Add one tiny step when you&apos;re ready.
+                    </Text>
+                  ) : (
+                    <View style={styles.checklistActive}>
+                      {checklistItems.map((item, index) => (
+                        <ChecklistRow
+                          key={item.id}
+                          item={item}
+                          isNext={index === nextIncompleteIndex}
+                          isEditing={editingItemId === item.id}
+                          editingText={editingText}
+                          onEditingTextChange={setEditingText}
+                          onComplete={() => completeChecklistItem(item.id)}
+                          onStartEdit={() => startEditItem(item.id)}
+                          onSaveEdit={() => saveItemEdit(item.id)}
+                          onCancelEdit={() => cancelItemEdit(item.id)}
+                          onDelete={() => deleteChecklistItem(item.id)}
+                          stepXp={STEP_XP}
+                        />
+                      ))}
+                    </View>
+                  )}
+
+                  {checklistItems.length < CHECKLIST_MAX && !editingItemId ? (
+                    <Pressable
+                      onPress={addChecklistStep}
+                      accessibilityRole="button"
+                      accessibilityLabel="Add a step"
+                      style={({ pressed }) => [
+                        styles.addStepBtn,
+                        pressed && styles.addStepBtnPressed,
+                      ]}>
+                      <Text style={[styles.addStepText, { color: theme.accentSecondary }]}>
+                        + Add a step
+                      </Text>
+                    </Pressable>
+                  ) : null}
+
+                  <View style={styles.actionStack}>
+                    <View style={compactBtn}>
+                      <GradientButton
+                        label="That’s enough for now"
+                        onPress={() => setTooBigStage('session-complete')}
+                        small
+                      />
+                    </View>
                   </View>
                 </View>
               </View>
@@ -1129,6 +1196,66 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     marginBottom: spacing.sm,
   },
+  checklistInner: {
+    width: '100%',
+  },
+  checklistInnerDesktop: {
+    maxWidth: CHECKLIST_DESKTOP_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  checklistBack: {
+    alignSelf: 'flex-start',
+    marginBottom: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.sm,
+  },
+  checklistBackText: {
+    fontWeight: '600',
+  },
+  checklistBackTextDesktop: {
+    fontSize: 17,
+    lineHeight: 24,
+  },
+  checklistBackTextMobile: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  checklistEyebrow: {
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
+  },
+  checklistEyebrowDesktop: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  checklistEyebrowMobile: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  checklistContextSummary: {
+    marginBottom: spacing.xs,
+  },
+  checklistContextSummaryDesktop: {
+    fontSize: 19,
+    lineHeight: 26,
+    fontWeight: '600',
+  },
+  checklistContextSummaryMobile: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+  },
+  checklistTaskNote: {
+    ...typography.bodySmall,
+    marginBottom: spacing.sm,
+  },
+  checklistEmpty: {
+    ...typography.body,
+    marginBottom: spacing.md,
+    lineHeight: 24,
+  },
   contextGrid: {
     width: '100%',
   },
@@ -1256,6 +1383,22 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingVertical: spacing.sm,
   },
+  addStepBtn: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+    justifyContent: 'center',
+  },
+  addStepBtnPressed: {
+    opacity: 0.82,
+  },
+  addStepText: {
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: '700',
+  },
   quietActionText: {
     ...typography.bodySmall,
     fontWeight: '600',
@@ -1300,16 +1443,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flexShrink: 0,
   },
-  editBtn: {
-    width: 36,
-    height: 36,
+  rowActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.xs,
     flexShrink: 0,
   },
-  editIcon: {
-    fontSize: 16,
-    lineHeight: 20,
+  rowIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowIconBtnPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.96 }],
+  },
+  rowEditIcon: {
+    fontSize: 20,
+    lineHeight: 24,
+  },
+  rowDeleteIcon: {
+    fontSize: 18,
+    lineHeight: 22,
   },
   editInput: {
     flex: 1,
