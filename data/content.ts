@@ -5,6 +5,7 @@ import {
   ProblemOption,
   Reward,
   StuckType,
+  StuckTypeOption,
   StruggleId,
   TinyWinCategory,
   ToolDefinition,
@@ -50,15 +51,55 @@ export const gardenVibeOptions = [
   { id: 'magic-desk', label: 'Magic desk garden', emoji: '✨' },
 ] as const;
 
-export const stuckTypes: { id: StuckType; label: string }[] = [
-  { id: 'too-big', label: 'Task feels too big' },
-  { id: 'no-beginning', label: "I don't know where to begin" },
-  { id: 'scared-bad', label: "I'm scared it won't be good" },
-  { id: 'bored', label: "I'm bored" },
-  { id: 'tired', label: "I'm tired" },
-  { id: 'avoiding-message', label: "I'm avoiding a message" },
-  { id: 'opened-everything', label: 'I opened everything and did nothing' },
-  { id: 'forgot-what', label: 'I forgot what I was doing' },
+export const stuckTypes: StuckTypeOption[] = [
+  {
+    id: 'too-big',
+    label: 'Task feels too big',
+    emoji: '🏔️',
+    hint: 'The whole thing feels heavy before you begin.',
+  },
+  {
+    id: 'no-beginning',
+    label: "I don't know where to begin",
+    emoji: '🧭',
+    hint: 'Too many possible first steps.',
+  },
+  {
+    id: 'scared-bad',
+    label: "I'm scared it won't be good",
+    emoji: '😬',
+    hint: 'Perfection pressure is blocking you.',
+  },
+  {
+    id: 'bored',
+    label: "I'm bored",
+    emoji: '🥱',
+    hint: 'Nothing about this feels interesting yet.',
+  },
+  {
+    id: 'tired',
+    label: "I'm tired",
+    emoji: '🔋',
+    hint: 'Your body wants rest, not a big push.',
+  },
+  {
+    id: 'avoiding-message',
+    label: "I'm avoiding a message",
+    emoji: '💬',
+    hint: 'A reply, email, or text is sitting there.',
+  },
+  {
+    id: 'opened-everything',
+    label: 'I opened everything and did nothing',
+    emoji: '🌀',
+    hint: 'Lots of tabs, zero traction.',
+  },
+  {
+    id: 'forgot-what',
+    label: 'I forgot what I was doing',
+    emoji: '💭',
+    hint: 'The thread slipped away mid-task.',
+  },
 ];
 
 export const tinyQuests: Record<StuckType, string[]> = {
