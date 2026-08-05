@@ -19,6 +19,7 @@ import { SupportiveMessage } from '@/components/design-system/Feedback';
 import { AppModal } from '@/components/design-system/Modal';
 import { TinyQuestCard } from '@/components/design-system/Cards';
 import { TagPill } from '@/components/design-system/Tags';
+import { GentleStopwatch } from '@/components/tools/GentleStopwatch';
 import { GentleTimer } from '@/components/tools/GentleTimer';
 import { stuckTypes } from '@/data/content';
 import { TaskContext, taskFlowTemplates } from '@/data/cantStartFlows';
@@ -37,6 +38,27 @@ import {
   inferBoredomTaskKind,
   pickBoredomChallenge,
 } from '@/data/boredom';
+import {
+  ENERGY_PROTECTION_CTA,
+  ENERGY_PROTECTION_OPTIONS,
+  EnergyProtectionChoice,
+  LATE_REPLY_ACTIONS,
+  LATE_REPLY_OPENERS,
+  LateReplyAction,
+  LateReplyOpener,
+  MESSAGE_LOOP_COMPLETION_COPY,
+  MESSAGE_LOOP_METHODS,
+  MessageLoopMethod,
+  MessageLoopStage,
+  QUICK_CLOSE_GOAL_PRESETS,
+  REPLY_INTENTS,
+  ReplyIntent,
+  buildBoundaryDraft,
+  buildLateReplyDraft,
+  buildMessageWinTitle,
+  buildReplyDraft,
+  formatStopwatchTime,
+} from '@/data/messageLoop';
 import {
   LOW_ENERGY_DURATION_PRESETS,
   LOW_ENERGY_ENOUGH_PRESETS,
@@ -83,11 +105,14 @@ const CHECKLIST_NARROW_BREAKPOINT = 900;
 const SUCCESS_DESKTOP_MAX_WIDTH = 820;
 const TASK_TEXT_MAX = 100;
 const CHECKLIST_MAX = 6;
+const REPLY_DRAFT_MAX = 1000;
+const UNSENT_DRAFT_MAX = 2000;
 const STEP_XP = calculateXP('tiny-win');
 const NO_BEGINNING_XP = calculateXP('tiny-win');
 const VERSION_ZERO_XP = calculateXP('tiny-win');
 const BOREDOM_XP = calculateXP('tiny-win');
 const RECHARGE_XP = calculateXP('tiny-win');
+const MESSAGE_LOOP_XP = calculateXP('tiny-win');
 const VERSION_ZERO_MENU_MAX_WIDTH = 960;
 const VERSION_ZERO_ACTIVE_MAX_WIDTH = 880;
 const VERSION_ZERO_COMPLETE_MAX_WIDTH = 790;
@@ -97,10 +122,14 @@ const BOREDOM_COMPLETE_MAX_WIDTH = 790;
 const RECHARGE_MENU_MAX_WIDTH = 1000;
 const RECHARGE_ACTIVE_MAX_WIDTH = 880;
 const RECHARGE_COMPLETE_MAX_WIDTH = 790;
+const MESSAGE_LOOP_MENU_MAX_WIDTH = 1000;
+const MESSAGE_LOOP_ACTIVE_MAX_WIDTH = 880;
+const MESSAGE_LOOP_COMPLETE_MAX_WIDTH = 790;
 const TIMER_PRESETS = [2, 5, 10] as const;
 const CUE_DURATION_PRESETS = [2, 5, 10] as const;
 const BREAK_DURATION_PRESETS = [5, 10, 15] as const;
 const LOW_ENERGY_ENOUGH_MAX = 120;
+const MESSAGE_LOOP_WIN_CATEGORY: TinyWinCategory = 'social-admin';
 
 const NO_BEGINNING_HEADLINES = [
   'You got moving!',
@@ -1024,6 +1053,83 @@ function PauseTypeRow({
   );
 }
 
+function MessageChoiceCard({
+  title,
+  description,
+  selected,
+  onPress,
+}: {
+  title: string;
+  description: string;
+  selected?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: Boolean(selected) }}
+      accessibilityLabel={title}
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.methodCardPressable,
+        pressed && styles.pressed,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
+      <View
+        style={[
+          styles.methodCard,
+          {
+            backgroundColor: selected ? theme.accentTertiary : theme.surface,
+            borderColor: selected ? theme.accent : theme.surfaceBorder,
+            borderWidth: selected ? 2 : 1,
+          },
+        ]}>
+        <Text style={[styles.methodTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>{description}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function MessageOptionChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={label}
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.durationChip,
+        {
+          backgroundColor: selected ? theme.accentTertiary : theme.surface,
+          borderColor: selected ? theme.accent : theme.surfaceBorder,
+        },
+        pressed && styles.pressed,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
+      <Text
+        style={[
+          styles.durationChipText,
+          { color: selected ? theme.text : theme.textSecondary },
+        ]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function RechargeBodyRow({
   item,
   isEditing,
@@ -1823,11 +1929,34 @@ export default function CantStartScreen() {
   const rechargeRewardingRef = useRef(false);
   const rechargeStageRef = useRef<RechargeStage>('menu');
 
+  const [messageStage, setMessageStage] = useState<MessageLoopStage>('menu');
+  const [messageMethod, setMessageMethod] = useState<MessageLoopMethod | null>(null);
+  const [messageContext, setMessageContext] = useState('');
+  const [quickCloseGoal, setQuickCloseGoal] = useState('');
+  const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
+  const [stopwatchRunKey, setStopwatchRunKey] = useState(0);
+  const [replyIntent, setReplyIntent] = useState<ReplyIntent | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [lateOpener, setLateOpener] = useState<LateReplyOpener | null>(null);
+  const [lateAction, setLateAction] = useState<LateReplyAction | null>(null);
+  const [lateDraft, setLateDraft] = useState('');
+  const [energyChoice, setEnergyChoice] = useState<EnergyProtectionChoice | null>(null);
+  const [unsentDraft, setUnsentDraft] = useState('');
+  const [usefulCoreDraft, setUsefulCoreDraft] = useState('');
+  const [unsentDraftCrumpled, setUnsentDraftCrumpled] = useState(false);
+  const [energyDraft, setEnergyDraft] = useState('');
+  const [messageRewarded, setMessageRewarded] = useState(false);
+  const [messageXpEarned, setMessageXpEarned] = useState(0);
+  const [mlInputFocused, setMlInputFocused] = useState(false);
+  const messageRewardingRef = useRef(false);
+  const messageStageRef = useRef<MessageLoopStage>('menu');
+
   const isTooBigFlow = stuckType === 'too-big';
   const isNoBeginningFlow = stuckType === 'no-beginning';
   const isVersionZeroFlow = stuckType === 'scared-bad';
   const isBoredomFlow = stuckType === 'bored';
   const isRechargeFlow = stuckType === 'tired';
+  const isMessageLoopFlow = stuckType === 'avoiding-message';
   const showContextStage = isTooBigFlow && tooBigStage === 'context';
   const showLegacyQuestStage =
     Boolean(stuckType) &&
@@ -1835,7 +1964,8 @@ export default function CantStartScreen() {
     !isNoBeginningFlow &&
     !isVersionZeroFlow &&
     !isBoredomFlow &&
-    !isRechargeFlow;
+    !isRechargeFlow &&
+    !isMessageLoopFlow;
   const suggestedContextOption = taskContextOptions.find((o) => o.id === suggestedContext);
 
   const flowTemplate = confirmedContext ? taskFlowTemplates[confirmedContext] : null;
@@ -1850,6 +1980,7 @@ export default function CantStartScreen() {
   const methodColumns = viewportWidth >= 768 ? 3 : 1;
   const boredomMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const rechargeMethodColumns = viewportWidth >= 768 ? 2 : 1;
+  const messageMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const methodGap = viewportWidth >= 768 ? 16 : 12;
   const nbSectionGap = isDesktopLayout ? 32 : 22;
   const nbFieldGap = isDesktopLayout ? 26 : 20;
@@ -1857,6 +1988,8 @@ export default function CantStartScreen() {
   const bdFieldGap = isDesktopLayout ? 26 : 20;
   const rcSectionGap = isDesktopLayout ? 32 : 22;
   const rcFieldGap = isDesktopLayout ? 26 : 20;
+  const mlSectionGap = isDesktopLayout ? 32 : 22;
+  const mlFieldGap = isDesktopLayout ? 26 : 20;
   const customDurationErrorText = isCustomDuration ? customDurationError(customDurationInput) : null;
   const resolvedCustomMinutes = parseCustomMinutes(customDurationInput);
   const canStartTimer = isCustomDuration
@@ -1929,6 +2062,13 @@ export default function CantStartScreen() {
 
   boredomStageRef.current = boredomStage;
   rechargeStageRef.current = rechargeStage;
+  messageStageRef.current = messageStage;
+
+  const canStartQuickClose = quickCloseGoal.trim().length > 0;
+  const messageCompletionCopy =
+    messageMethod !== null ? MESSAGE_LOOP_COMPLETION_COPY[messageMethod] : null;
+  const energyCtaLabel =
+    energyChoice !== null ? ENERGY_PROTECTION_CTA[energyChoice] : 'I did it';
 
   const suggestedRechargeMethod = getSuggestedRechargeMethod(tiredFeeling);
   const pauseLabel = getPauseOptionLabel(selectedPauseId, customPauseText);
@@ -1975,7 +2115,8 @@ export default function CantStartScreen() {
       stuckType === 'too-big' ||
       stuckType === 'scared-bad' ||
       stuckType === 'bored' ||
-      stuckType === 'tired'
+      stuckType === 'tired' ||
+      stuckType === 'avoiding-message'
     ) {
       return [];
     }
@@ -2131,6 +2272,29 @@ export default function CantStartScreen() {
     setRechargeXpEarned(0);
     setRcInputFocused(false);
     rechargeRewardingRef.current = false;
+  };
+
+  const resetMessageLoopState = () => {
+    setMessageStage('menu');
+    setMessageMethod(null);
+    setMessageContext('');
+    setQuickCloseGoal('');
+    setStopwatchElapsed(0);
+    setStopwatchRunKey((key) => key + 1);
+    setReplyIntent(null);
+    setReplyDraft('');
+    setLateOpener(null);
+    setLateAction(null);
+    setLateDraft('');
+    setEnergyChoice(null);
+    setUnsentDraft('');
+    setUsefulCoreDraft('');
+    setUnsentDraftCrumpled(false);
+    setEnergyDraft('');
+    setMessageRewarded(false);
+    setMessageXpEarned(0);
+    setMlInputFocused(false);
+    messageRewardingRef.current = false;
   };
 
   const returnToBoredomMenu = () => {
@@ -2314,6 +2478,10 @@ export default function CantStartScreen() {
           setRechargeStage('low-energy-setup');
           setLowEnergyRunKey((key) => key + 1);
         }
+        if (messageStageRef.current === 'quick-running') {
+          setMessageStage('quick-setup');
+          setStopwatchRunKey((key) => key + 1);
+        }
       };
     }, []),
   );
@@ -2473,6 +2641,195 @@ export default function CantStartScreen() {
       return;
     }
     setRechargeStage('low-energy-result');
+  };
+
+  const returnToMessageMenu = () => {
+    setMessageStage('menu');
+    setMessageMethod(null);
+  };
+
+  const tryAnotherMessageTool = () => {
+    setMessageRewarded(false);
+    setMessageXpEarned(0);
+    messageRewardingRef.current = false;
+    setMessageMethod(null);
+    setQuickCloseGoal('');
+    setStopwatchElapsed(0);
+    setStopwatchRunKey((key) => key + 1);
+    setReplyIntent(null);
+    setReplyDraft('');
+    setLateOpener(null);
+    setLateAction(null);
+    setLateDraft('');
+    setEnergyChoice(null);
+    setUnsentDraft('');
+    setUsefulCoreDraft('');
+    setUnsentDraftCrumpled(false);
+    setEnergyDraft('');
+    setMessageStage('menu');
+  };
+
+  const closeAnotherMessage = () => {
+    setMessageRewarded(false);
+    setMessageXpEarned(0);
+    messageRewardingRef.current = false;
+    setMessageMethod('close-quickly');
+    setQuickCloseGoal('');
+    setStopwatchElapsed(0);
+    setStopwatchRunKey((key) => key + 1);
+    setMessageStage('quick-setup');
+  };
+
+  const selectMessageMethod = (method: MessageLoopMethod) => {
+    setMessageMethod(method);
+    if (method === 'close-quickly') {
+      setMessageStage('quick-setup');
+      return;
+    }
+    if (method === 'build-reply') {
+      setMessageStage('reply-builder');
+      return;
+    }
+    if (method === 'late-reply') {
+      setMessageStage('late-reply');
+      return;
+    }
+    setMessageStage('protect-energy');
+  };
+
+  const awardMessageWin = (title: string) => {
+    if (messageRewarded || messageRewardingRef.current) return;
+    messageRewardingRef.current = true;
+    addTinyWin(title.slice(0, 80), MESSAGE_LOOP_WIN_CATEGORY, false);
+    markAchievementEvent('cant-start-quest');
+    setMessageRewarded(true);
+    setMessageXpEarned(MESSAGE_LOOP_XP);
+    setMessageStage('complete');
+  };
+
+  const startQuickCloseStopwatch = () => {
+    if (!canStartQuickClose) return;
+    setStopwatchElapsed(0);
+    setStopwatchRunKey((key) => key + 1);
+    setMessageStage('quick-running');
+  };
+
+  const finishQuickCloseStopwatch = (elapsedSeconds: number) => {
+    setStopwatchElapsed(elapsedSeconds);
+    setMessageStage('quick-result');
+  };
+
+  const cancelQuickCloseStopwatch = () => {
+    setStopwatchRunKey((key) => key + 1);
+    setMessageStage('quick-setup');
+  };
+
+  const completeQuickCloseWin = () => {
+    const title = buildMessageWinTitle({
+      method: 'close-quickly',
+      elapsedSeconds: stopwatchElapsed,
+    });
+    awardMessageWin(title);
+  };
+
+  const selectReplyIntent = (intent: ReplyIntent) => {
+    setReplyIntent(intent);
+    setReplyDraft(buildReplyDraft({ intent, context: messageContext }));
+  };
+
+  const completeReplyBuilderWin = () => {
+    if (!replyDraft.trim()) return;
+    const title = buildMessageWinTitle({ method: 'build-reply' });
+    awardMessageWin(title);
+  };
+
+  const selectLateOpener = (opener: LateReplyOpener) => {
+    setLateOpener(opener);
+    if (lateAction) {
+      setLateDraft(
+        buildLateReplyDraft({
+          opener,
+          action: lateAction,
+          context: messageContext,
+        }),
+      );
+    }
+  };
+
+  const selectLateAction = (action: LateReplyAction) => {
+    setLateAction(action);
+    if (lateOpener) {
+      setLateDraft(
+        buildLateReplyDraft({
+          opener: lateOpener,
+          action,
+          context: messageContext,
+        }),
+      );
+    }
+  };
+
+  const completeLateReplyWin = () => {
+    if (!lateDraft.trim()) return;
+    const title = buildMessageWinTitle({ method: 'late-reply' });
+    awardMessageWin(title);
+  };
+
+  const selectEnergyChoice = (choice: EnergyProtectionChoice) => {
+    setEnergyChoice(choice);
+    if (choice === 'unsent-draft') {
+      setUnsentDraftCrumpled(false);
+      setUnsentDraft('');
+      setUsefulCoreDraft('');
+      setEnergyDraft('');
+      return;
+    }
+    if (choice === 'no-reply-needed' || choice === 'ask-someone-to-check') {
+      setEnergyDraft('');
+      return;
+    }
+    setEnergyDraft(buildBoundaryDraft(choice));
+  };
+
+  const crumpleUnsentDraft = () => {
+    setUnsentDraft('');
+    setUnsentDraftCrumpled(true);
+  };
+
+  const completeEnergyWin = () => {
+    if (!energyChoice) return;
+
+    if (energyChoice === 'unsent-draft') {
+      if (!unsentDraftCrumpled || !usefulCoreDraft.trim()) return;
+    } else if (energyChoice === 'no-reply-needed') {
+      // Decision card only — no draft required.
+    } else if (energyChoice === 'ask-someone-to-check') {
+      if (!energyDraft.trim()) return;
+    } else if (!energyDraft.trim()) {
+      return;
+    }
+
+    const title = buildMessageWinTitle({
+      method: 'protect-energy',
+      energyChoice,
+    });
+    awardMessageWin(title);
+  };
+
+  const backFromMessageComplete = () => {
+    if (messageMethod === 'close-quickly') {
+      setMessageStage('quick-result');
+      return;
+    }
+    if (messageMethod === 'build-reply') {
+      setMessageStage('reply-builder');
+      return;
+    }
+    if (messageMethod === 'late-reply') {
+      setMessageStage('late-reply');
+      return;
+    }
+    setMessageStage('protect-energy');
   };
 
   const toggleBodyResetItem = (id: string) => {
@@ -2635,30 +2992,42 @@ export default function CantStartScreen() {
       resetVersionZeroState();
       resetBoredomState();
       resetRechargeState();
+      resetMessageLoopState();
     } else if (type === 'no-beginning') {
       resetTooBigLocalState();
       resetVersionZeroState();
       resetNoBeginningState();
       resetBoredomState();
       resetRechargeState();
+      resetMessageLoopState();
     } else if (type === 'scared-bad') {
       resetTooBigLocalState();
       resetNoBeginningState();
       resetVersionZeroState();
       resetBoredomState();
       resetRechargeState();
+      resetMessageLoopState();
     } else if (type === 'bored') {
       resetTooBigLocalState();
       resetNoBeginningState();
       resetVersionZeroState();
       resetBoredomState();
       resetRechargeState();
+      resetMessageLoopState();
     } else if (type === 'tired') {
       resetTooBigLocalState();
       resetNoBeginningState();
       resetVersionZeroState();
       resetBoredomState();
       resetRechargeState();
+      resetMessageLoopState();
+    } else if (type === 'avoiding-message') {
+      resetTooBigLocalState();
+      resetNoBeginningState();
+      resetVersionZeroState();
+      resetBoredomState();
+      resetRechargeState();
+      resetMessageLoopState();
     } else {
       setTooBigStage('context');
       setManualContext(null);
@@ -2671,6 +3040,7 @@ export default function CantStartScreen() {
       resetVersionZeroState();
       resetBoredomState();
       resetRechargeState();
+      resetMessageLoopState();
     }
   };
 
@@ -2681,6 +3051,7 @@ export default function CantStartScreen() {
     resetVersionZeroState();
     resetBoredomState();
     resetRechargeState();
+    resetMessageLoopState();
   };
 
   const returnToActivationMenu = () => {
@@ -6171,6 +6542,871 @@ export default function CantStartScreen() {
             </View>
           ) : null}
 
+          {isMessageLoopFlow && messageStage === 'menu' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageMenuInner]}>
+                <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>
+                  I&apos;M AVOIDING A MESSAGE
+                </Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Let&apos;s get this message out of your head.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: mlSectionGap },
+                  ]}>
+                  An unanswered message can keep using mental space long after the reply itself would
+                  be finished. You do not need a perfect response — only a clear next decision.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.rechargeIntroCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: spacing.sm,
+                    },
+                  ]}>
+                  <View style={styles.rechargeIntroTextGroup}>
+                    <Text style={[styles.rechargeIntroTitle, { color: theme.text }]}>
+                      The reply may take two minutes. The open loop has already taken enough.
+                    </Text>
+                    <Text style={[styles.rechargeIntroSupport, { color: theme.text }]}>
+                      Let&apos;s reply, ask for time, set a boundary, or decide that no answer is
+                      needed.
+                    </Text>
+                  </View>
+                </GlassCard>
+
+                <View style={[styles.taskFieldBlock, { marginBottom: mlSectionGap, marginTop: mlFieldGap }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What is waiting for a reply?
+                  </Text>
+                  <TextInput
+                    value={messageContext}
+                    onChangeText={(v) => setMessageContext(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="e.g. a work email, a message from a friend, an appointment request"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="What is waiting for a reply?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => {}}
+                    onFocus={() => setMlInputFocused(true)}
+                    onBlur={() => setMlInputFocused(false)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: mlInputFocused ? theme.accent : theme.surfaceBorder,
+                      },
+                      mlInputFocused && styles.taskInputFocused,
+                    ]}
+                  />
+                  <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                    Keep it brief. This stays only on this screen.
+                  </Text>
+                </View>
+
+                <ActivationMethodsGrid columns={messageMethodColumns} gap={methodGap}>
+                  {MESSAGE_LOOP_METHODS.map((method) => (
+                    <ActivationMethodCard
+                      key={method.id}
+                      icon={method.icon}
+                      title={method.title}
+                      description={method.description}
+                      onPress={() => selectMessageMethod(method.id)}
+                    />
+                  ))}
+                </ActivationMethodsGrid>
+              </View>
+            </View>
+          ) : null}
+
+          {isMessageLoopFlow && messageStage === 'quick-setup' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageActiveInner]}>
+                <InternalBack label="Back to message tools" onPress={returnToMessageMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>CLOSE THE LOOP</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  How long will the reply actually take?
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  Your brain may have been carrying this message for much longer than the reply
+                  itself will take. Let&apos;s measure the action, not the dread around it.
+                </Text>
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: mlFieldGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    One finished reply means one less task running in the background.
+                  </Text>
+                </GlassCard>
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  What would close this loop?
+                </Text>
+                <View style={[styles.exampleRow, { marginBottom: spacing.md }]}>
+                  {QUICK_CLOSE_GOAL_PRESETS.map((preset) => (
+                    <MessageOptionChip
+                      key={preset}
+                      label={preset}
+                      selected={quickCloseGoal === preset}
+                      onPress={() =>
+                        setQuickCloseGoal(
+                          preset === 'Write my own finish line' ? '' : preset,
+                        )
+                      }
+                    />
+                  ))}
+                </View>
+                <TextInput
+                  value={quickCloseGoal}
+                  onChangeText={(v) => setQuickCloseGoal(v.slice(0, TASK_TEXT_MAX))}
+                  placeholder="e.g. send one short answer"
+                  placeholderTextColor={theme.textMuted}
+                  maxLength={TASK_TEXT_MAX}
+                  accessibilityLabel="What would close this loop?"
+                  returnKeyType="done"
+                  blurOnSubmit
+                  onSubmitEditing={startQuickCloseStopwatch}
+                  style={[
+                    styles.taskInput,
+                    {
+                      color: theme.text,
+                      backgroundColor: theme.surface,
+                      borderColor: theme.surfaceBorder,
+                      marginBottom: mlFieldGap,
+                    },
+                  ]}
+                />
+
+                <View style={styles.actionStack}>
+                  <View style={[styles.compactBtn, !canStartQuickClose && { opacity: 0.45 }]}>
+                    <GradientButton
+                      label="Start the clock and open the message"
+                      onPress={startQuickCloseStopwatch}
+                      small
+                    />
+                  </View>
+                  <Text style={[styles.cueSupportText, { color: theme.textMuted }]}>
+                    Switch to your email or messenger. Come back when the loop is closed.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isMessageLoopFlow && messageStage === 'quick-running' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageActiveInner, styles.timerRunningInner]}>
+                <InternalBack
+                  label="Back to stopwatch setup"
+                  onPress={cancelQuickCloseStopwatch}
+                />
+                <GentleStopwatch
+                  key={`message-stopwatch-${stopwatchRunKey}`}
+                  runKey={stopwatchRunKey}
+                  title={`Closing: ${quickCloseGoal.trim()}`}
+                  onFinish={finishQuickCloseStopwatch}
+                  onCancel={cancelQuickCloseStopwatch}
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {isMessageLoopFlow && messageStage === 'quick-result' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageActiveInner]}>
+                <InternalBack
+                  label="Back to stopwatch"
+                  onPress={() => {
+                    setStopwatchRunKey((key) => key + 1);
+                    setMessageStage('quick-running');
+                  }}
+                />
+                <GlassCard style={styles.successCard}>
+                  <Text style={[styles.eyebrow, { color: theme.textMuted }]}>LOOP CLOSED</Text>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>
+                    It took {formatStopwatchTime(stopwatchElapsed)}.
+                  </Text>
+                  <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                    That message no longer needs to keep running in the background.
+                  </Text>
+                  <Text style={[styles.rechargeIntroTitle, { color: theme.text, marginBottom: spacing.md }]}>
+                    Your brain can put it down now.
+                  </Text>
+                  <View style={styles.actionStack}>
+                    {messageRewarded ? (
+                      <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                        <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                          Tiny win saved ✓
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label={`Save this as a tiny win +${MESSAGE_LOOP_XP} XP`}
+                          onPress={completeQuickCloseWin}
+                          small
+                        />
+                      </View>
+                    )}
+                    <Pressable
+                      onPress={closeAnotherMessage}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close another message"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.quietAction,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                        Close another message
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={tryAnotherMessageTool}
+                      accessibilityRole="button"
+                      accessibilityLabel="Try another reply tool"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.quietAction,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                        Try another reply tool
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
+          {isMessageLoopFlow && messageStage === 'reply-builder' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageActiveInner]}>
+                <InternalBack label="Back to message tools" onPress={returnToMessageMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>
+                  SMALLEST ACCEPTABLE REPLY
+                </Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  You do not need the perfect words.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  Choose what the reply needs to accomplish. We&apos;ll create a short starting point
+                  that you can edit.
+                </Text>
+                <Text
+                  style={[
+                    styles.cueSupportText,
+                    {
+                      color: theme.textMuted,
+                      textAlign: 'left',
+                      alignSelf: 'stretch',
+                      marginBottom: mlFieldGap,
+                    },
+                  ]}>
+                  A useful reply can be two sentences.
+                </Text>
+
+                <ActivationMethodsGrid columns={1} gap={methodGap}>
+                  {REPLY_INTENTS.map((intent) => (
+                    <MessageChoiceCard
+                      key={intent.id}
+                      title={intent.title}
+                      description={intent.description}
+                      selected={replyIntent === intent.id}
+                      onPress={() => selectReplyIntent(intent.id)}
+                    />
+                  ))}
+                </ActivationMethodsGrid>
+
+                {replyIntent ? (
+                  <View style={[styles.taskFieldBlock, { marginTop: mlFieldGap }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                      Your short draft
+                    </Text>
+                    <TextInput
+                      value={replyDraft}
+                      onChangeText={(v) => setReplyDraft(v.slice(0, REPLY_DRAFT_MAX))}
+                      placeholder="Edit your reply here"
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={REPLY_DRAFT_MAX}
+                      multiline
+                      textAlignVertical="top"
+                      accessibilityLabel="Your short draft"
+                      onSubmitEditing={() => {}}
+                      style={[
+                        styles.taskInput,
+                        styles.messageDraftInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                      Change anything you need. The app cannot send this message for you.
+                    </Text>
+
+                    <View style={[styles.actionStack, { marginTop: spacing.md }]}>
+                      {messageRewarded ? (
+                        <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                          <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                            Tiny win saved ✓
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.compactBtn}>
+                          <GradientButton
+                            label={`I sent the reply +${MESSAGE_LOOP_XP} XP`}
+                            onPress={completeReplyBuilderWin}
+                            small
+                          />
+                        </View>
+                      )}
+                      <Pressable
+                        onPress={() => {
+                          setReplyIntent(null);
+                          setReplyDraft('');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Choose another intention"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Choose another intention
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={returnToMessageMenu}
+                        accessibilityRole="button"
+                        accessibilityLabel="I'm not ready to send yet"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          I&apos;m not ready to send yet
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {isMessageLoopFlow && messageStage === 'late-reply' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageActiveInner]}>
+                <InternalBack label="Back to message tools" onPress={returnToMessageMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>LATE REPLY</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Late is not the same as impossible.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  You do not need to explain your entire nervous system before answering the actual
+                  message.
+                </Text>
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: mlFieldGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    One sentence of acknowledgment is enough.
+                  </Text>
+                </GlassCard>
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  Choose an opener
+                </Text>
+                <View style={[styles.exampleRow, { marginBottom: mlFieldGap }]}>
+                  {LATE_REPLY_OPENERS.map((opener) => (
+                    <MessageOptionChip
+                      key={opener.id}
+                      label={opener.label}
+                      selected={lateOpener === opener.id}
+                      onPress={() => selectLateOpener(opener.id)}
+                    />
+                  ))}
+                </View>
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  Choose what comes next
+                </Text>
+                <View style={[styles.exampleRow, { marginBottom: mlFieldGap }]}>
+                  {LATE_REPLY_ACTIONS.map((action) => (
+                    <MessageOptionChip
+                      key={action.id}
+                      label={action.label}
+                      selected={lateAction === action.id}
+                      onPress={() => selectLateAction(action.id)}
+                    />
+                  ))}
+                </View>
+
+                {lateOpener && lateAction ? (
+                  <View style={styles.taskFieldBlock}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>Your reply</Text>
+                    <TextInput
+                      value={lateDraft}
+                      onChangeText={(v) => setLateDraft(v.slice(0, REPLY_DRAFT_MAX))}
+                      placeholder="Edit your late reply here"
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={REPLY_DRAFT_MAX}
+                      multiline
+                      textAlignVertical="top"
+                      accessibilityLabel="Your reply"
+                      onSubmitEditing={() => {}}
+                      style={[
+                        styles.taskInput,
+                        styles.messageDraftInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+
+                    <View style={[styles.actionStack, { marginTop: spacing.md }]}>
+                      {messageRewarded ? (
+                        <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                          <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                            Tiny win saved ✓
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.compactBtn}>
+                          <GradientButton
+                            label={`I sent the late reply +${MESSAGE_LOOP_XP} XP`}
+                            onPress={completeLateReplyWin}
+                            small
+                          />
+                        </View>
+                      )}
+                      <Pressable
+                        onPress={() => {
+                          setLateOpener(null);
+                          setLateDraft('');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Change the opening"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Change the opening
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => selectLateAction('ask-for-time')}
+                        accessibilityRole="button"
+                        accessibilityLabel="I need more time instead"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          I need more time instead
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {isMessageLoopFlow && messageStage === 'protect-energy' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageActiveInner]}>
+                <InternalBack label="Back to message tools" onPress={returnToMessageMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>PROTECT YOUR ENERGY</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  You can respond without giving this all of your energy.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  First decide what kind of contact is actually necessary. A boundary is also a clear
+                  answer.
+                </Text>
+                <Text style={[styles.vzSafetyCopy, { color: theme.textMuted, marginTop: 0, marginBottom: mlFieldGap }]}>
+                  If contact feels unsafe, you are allowed to pause, mute, block, seek support, or not
+                  reply.
+                </Text>
+
+                <ActivationMethodsGrid columns={1} gap={methodGap}>
+                  {ENERGY_PROTECTION_OPTIONS.map((option) => (
+                    <MessageChoiceCard
+                      key={option.id}
+                      title={option.title}
+                      description={option.description}
+                      selected={energyChoice === option.id}
+                      onPress={() => selectEnergyChoice(option.id)}
+                    />
+                  ))}
+                </ActivationMethodsGrid>
+
+                {energyChoice === 'unsent-draft' && !unsentDraftCrumpled ? (
+                  <View style={[styles.taskFieldBlock, { marginTop: mlFieldGap }]}>
+                    <Text style={[styles.stageTitle, { color: theme.text, fontSize: 28, lineHeight: 34 }]}>
+                      Write the version you should not send.
+                    </Text>
+                    <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                      This stays inside this temporary field. It will not be saved or sent.
+                    </Text>
+                    <TextInput
+                      value={unsentDraft}
+                      onChangeText={(v) => setUnsentDraft(v.slice(0, UNSENT_DRAFT_MAX))}
+                      placeholder="Get the emotional first version out..."
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={UNSENT_DRAFT_MAX}
+                      multiline
+                      textAlignVertical="top"
+                      accessibilityLabel="Unsent emotional draft"
+                      onSubmitEditing={() => {}}
+                      style={[
+                        styles.taskInput,
+                        styles.messageDraftInput,
+                        styles.messageUnsentInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    <View style={[styles.compactBtn, { marginTop: spacing.md, alignSelf: 'center' }]}>
+                      <GradientButton
+                        label="Crumple this draft 🗑️"
+                        onPress={crumpleUnsentDraft}
+                        small
+                      />
+                    </View>
+                  </View>
+                ) : null}
+
+                {energyChoice === 'unsent-draft' && unsentDraftCrumpled ? (
+                  <View style={[styles.taskFieldBlock, { marginTop: mlFieldGap }]}>
+                    <Text style={[styles.stageTitle, { color: theme.text, fontSize: 28, lineHeight: 34 }]}>
+                      Good. What is the useful core?
+                    </Text>
+                    <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                      Keep only the information, request, or boundary that actually needs to be
+                      communicated.
+                    </Text>
+                    <TextInput
+                      value={usefulCoreDraft}
+                      onChangeText={(v) => setUsefulCoreDraft(v.slice(0, REPLY_DRAFT_MAX))}
+                      placeholder="Write the useful version here"
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={REPLY_DRAFT_MAX}
+                      multiline
+                      textAlignVertical="top"
+                      accessibilityLabel="Useful core draft"
+                      onSubmitEditing={() => {}}
+                      style={[
+                        styles.taskInput,
+                        styles.messageDraftInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    <View style={[styles.actionStack, { marginTop: spacing.md }]}>
+                      {messageRewarded ? (
+                        <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                          <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                            Tiny win saved ✓
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.compactBtn}>
+                          <GradientButton
+                            label={`${energyCtaLabel} +${MESSAGE_LOOP_XP} XP`}
+                            onPress={completeEnergyWin}
+                            small
+                          />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ) : null}
+
+                {energyChoice === 'no-reply-needed' ? (
+                  <View style={[styles.taskFieldBlock, { marginTop: mlFieldGap }]}>
+                    <GlassCard
+                      style={[
+                        styles.vzStatementCard,
+                        {
+                          backgroundColor: theme.accentTertiary,
+                          borderColor: theme.accent,
+                          marginBottom: spacing.md,
+                        },
+                      ]}>
+                      <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                        I am choosing not to reply to this message.
+                      </Text>
+                    </GlassCard>
+                    <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                      A deliberate decision is different from carrying an undefined obligation.
+                    </Text>
+                    <View style={[styles.actionStack, { marginTop: spacing.md }]}>
+                      {messageRewarded ? (
+                        <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                          <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                            Tiny win saved ✓
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.compactBtn}>
+                          <GradientButton
+                            label={`${energyCtaLabel} +${MESSAGE_LOOP_XP} XP`}
+                            onPress={completeEnergyWin}
+                            small
+                          />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ) : null}
+
+                {energyChoice === 'ask-someone-to-check' ? (
+                  <View style={[styles.taskFieldBlock, { marginTop: mlFieldGap }]}>
+                    <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                      Share the draft with someone you trust before sending it.
+                    </Text>
+                    <TextInput
+                      value={energyDraft}
+                      onChangeText={(v) => setEnergyDraft(v.slice(0, REPLY_DRAFT_MAX))}
+                      placeholder="Paste or write a temporary draft"
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={REPLY_DRAFT_MAX}
+                      multiline
+                      textAlignVertical="top"
+                      accessibilityLabel="Draft for someone to check"
+                      onSubmitEditing={() => {}}
+                      style={[
+                        styles.taskInput,
+                        styles.messageDraftInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    <View style={[styles.actionStack, { marginTop: spacing.md }]}>
+                      {messageRewarded ? (
+                        <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                          <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                            Tiny win saved ✓
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.compactBtn}>
+                          <GradientButton
+                            label={`${energyCtaLabel} +${MESSAGE_LOOP_XP} XP`}
+                            onPress={completeEnergyWin}
+                            small
+                          />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ) : null}
+
+                {energyChoice &&
+                energyChoice !== 'unsent-draft' &&
+                energyChoice !== 'no-reply-needed' &&
+                energyChoice !== 'ask-someone-to-check' ? (
+                  <View style={[styles.taskFieldBlock, { marginTop: mlFieldGap }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>Your short draft</Text>
+                    <TextInput
+                      value={energyDraft}
+                      onChangeText={(v) => setEnergyDraft(v.slice(0, REPLY_DRAFT_MAX))}
+                      placeholder="Edit your draft here"
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={REPLY_DRAFT_MAX}
+                      multiline
+                      textAlignVertical="top"
+                      accessibilityLabel="Energy protection draft"
+                      onSubmitEditing={() => {}}
+                      style={[
+                        styles.taskInput,
+                        styles.messageDraftInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    <View style={[styles.actionStack, { marginTop: spacing.md }]}>
+                      {messageRewarded ? (
+                        <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                          <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                            Tiny win saved ✓
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.compactBtn}>
+                          <GradientButton
+                            label={`${energyCtaLabel} +${MESSAGE_LOOP_XP} XP`}
+                            onPress={completeEnergyWin}
+                            small
+                          />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {isMessageLoopFlow && messageStage === 'complete' && messageCompletionCopy ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.messageCompleteInner]}>
+                <InternalBack label="Back to my reply tool" onPress={backFromMessageComplete} />
+                <GlassCard style={styles.successCard}>
+                  <Text style={styles.vzCompleteBadge} accessibilityLabel="Message loop">
+                    💬
+                  </Text>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>
+                    {messageCompletionCopy.headline}
+                  </Text>
+                  <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                    {messageCompletionCopy.body}
+                  </Text>
+                  <View style={styles.sessionStats}>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      1 communication loop handled
+                    </Text>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      +{messageXpEarned} XP earned
+                    </Text>
+                    {messageMethod === 'close-quickly' ? (
+                      <Text style={[styles.sessionStat, { color: theme.text }]}>
+                        Reply time: {formatStopwatchTime(stopwatchElapsed)}
+                      </Text>
+                    ) : null}
+                    <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
+                      Your garden grows from closed loops too.
+                    </Text>
+                  </View>
+                  <View style={styles.successActions}>
+                    <View style={styles.successBtn}>
+                      <GradientButton
+                        label="Back to dashboard"
+                        onPress={() => router.push('/dashboard' as never)}
+                        small
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.successLinks}>
+                    <Pressable
+                      onPress={closeAnotherMessage}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close another message"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Close another message
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={tryAnotherMessageTool}
+                      accessibilityRole="button"
+                      accessibilityLabel="Try another reply tool"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Try another reply tool
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push('/garden' as never)}
+                      accessibilityRole="link"
+                      accessibilityLabel="Check out your garden"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.accentSecondary }]}>
+                        Check out your garden
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={returnToStuckTypes}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose another stuck type"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Choose another stuck type
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
           {showLegacyQuestStage ? (
             <>
               <Text style={[styles.headline, { color: theme.text }]}>Starting is a task too.</Text>
@@ -7116,6 +8352,25 @@ const styles = StyleSheet.create({
   rechargeCompleteInner: {
     maxWidth: RECHARGE_COMPLETE_MAX_WIDTH,
     alignSelf: 'center',
+  },
+  messageMenuInner: {
+    maxWidth: MESSAGE_LOOP_MENU_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  messageActiveInner: {
+    maxWidth: MESSAGE_LOOP_ACTIVE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  messageCompleteInner: {
+    maxWidth: MESSAGE_LOOP_COMPLETE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  messageDraftInput: {
+    minHeight: 140,
+    paddingTop: Platform.OS === 'web' ? 12 : spacing.sm + 2,
+  },
+  messageUnsentInput: {
+    minHeight: 180,
   },
   rechargeIntroCard: {
     width: '100%',

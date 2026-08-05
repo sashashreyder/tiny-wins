@@ -86,7 +86,7 @@ export const stuckTypes: StuckTypeOption[] = [
     id: 'avoiding-message',
     label: "I'm avoiding a message",
     emoji: '💬',
-    hint: 'A reply, email, or text is sitting there.',
+    hint: 'The reply may be small, but the open loop keeps taking up space.',
   },
   {
     id: 'opened-everything',
