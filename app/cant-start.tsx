@@ -5067,23 +5067,21 @@ export default function CantStartScreen() {
 
                 <GlassCard
                   style={[
-                    styles.vzStatementCard,
+                    styles.rechargeIntroCard,
                     {
                       backgroundColor: theme.accentTertiary,
                       borderColor: theme.accent,
                       marginBottom: rcSectionGap,
                     },
                   ]}>
-                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
-                    Rest is part of the process.
-                  </Text>
-                  <Text
-                    style={[
-                      styles.cueSupportText,
-                      { color: theme.textSecondary, marginTop: spacing.sm },
-                    ]}>
-                    You do not have to earn it first.
-                  </Text>
+                  <View style={styles.rechargeIntroTextGroup}>
+                    <Text style={[styles.rechargeIntroTitle, { color: theme.text }]}>
+                      Rest is part of the process.
+                    </Text>
+                    <Text style={[styles.rechargeIntroSupport, { color: theme.text }]}>
+                      You do not have to earn it first.
+                    </Text>
+                  </View>
                 </GlassCard>
 
                 <View style={[styles.taskFieldBlock, { marginBottom: rcSectionGap, marginTop: 0 }]}>
@@ -7118,6 +7116,31 @@ const styles = StyleSheet.create({
   rechargeCompleteInner: {
     maxWidth: RECHARGE_COMPLETE_MAX_WIDTH,
     alignSelf: 'center',
+  },
+  rechargeIntroCard: {
+    width: '100%',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rechargeIntroTextGroup: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  rechargeIntroTitle: {
+    ...typography.h2,
+    textAlign: 'center',
+    lineHeight: 32,
+    fontWeight: '700',
+  },
+  rechargeIntroSupport: {
+    ...typography.body,
+    textAlign: 'center',
+    lineHeight: 24,
+    fontWeight: '500',
   },
   rechargeRulesCard: {
     width: '100%',
