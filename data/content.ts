@@ -74,7 +74,7 @@ export const stuckTypes: StuckTypeOption[] = [
     id: 'bored',
     label: "I'm bored",
     emoji: '🥱',
-    hint: 'Nothing about this feels interesting yet.',
+    hint: 'The task may need more stimulation, not more pressure.',
   },
   {
     id: 'tired',

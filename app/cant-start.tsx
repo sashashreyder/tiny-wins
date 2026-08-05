@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Platform,
@@ -10,7 +10,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { AppShell } from '@/components/design-system/AppShell';
 import { GradientButton } from '@/components/design-system/Buttons';
 import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
@@ -22,6 +22,21 @@ import { TagPill } from '@/components/design-system/Tags';
 import { GentleTimer } from '@/components/tools/GentleTimer';
 import { stuckTypes } from '@/data/content';
 import { TaskContext, taskFlowTemplates } from '@/data/cantStartFlows';
+import {
+  BOREDOM_COMPLETION_COPY,
+  BOREDOM_METHODS,
+  BORING_TAX_OPTIONS,
+  BREAK_ACTIVITY_PRESETS,
+  BoredomMethod,
+  BoredomStage,
+  BoringTaxOption,
+  INTERESTING_PART_PRESETS,
+  buildBoredomWinTitle,
+  formatBoringTaxSummary,
+  getBoredomChallengeById,
+  inferBoredomTaskKind,
+  pickBoredomChallenge,
+} from '@/data/boredom';
 import {
   PressureRuleState,
   VERSION_ZERO_MODES,
@@ -51,11 +66,16 @@ const CHECKLIST_MAX = 6;
 const STEP_XP = calculateXP('tiny-win');
 const NO_BEGINNING_XP = calculateXP('tiny-win');
 const VERSION_ZERO_XP = calculateXP('tiny-win');
+const BOREDOM_XP = calculateXP('tiny-win');
 const VERSION_ZERO_MENU_MAX_WIDTH = 960;
 const VERSION_ZERO_ACTIVE_MAX_WIDTH = 880;
 const VERSION_ZERO_COMPLETE_MAX_WIDTH = 790;
+const BOREDOM_MENU_MAX_WIDTH = 1000;
+const BOREDOM_ACTIVE_MAX_WIDTH = 880;
+const BOREDOM_COMPLETE_MAX_WIDTH = 790;
 const TIMER_PRESETS = [2, 5, 10] as const;
 const CUE_DURATION_PRESETS = [2, 5, 10] as const;
+const BREAK_DURATION_PRESETS = [5, 10, 15] as const;
 
 const NO_BEGINNING_HEADLINES = [
   'You got moving!',
@@ -770,6 +790,107 @@ function DurationChip({
   );
 }
 
+function BoredomChallengeDice({ shuffleKey }: { shuffleKey: number }) {
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (shuffleKey === 0) return;
+    rotateAnim.setValue(0);
+    scaleAnim.setValue(1);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(rotateAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+        Animated.timing(rotateAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 1.12, duration: 120, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 160, useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, [shuffleKey, rotateAnim, scaleAnim]);
+
+  const rotation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '18deg'],
+  });
+
+  return (
+    <Animated.Text
+      style={[
+        styles.boredomDice,
+        {
+          transform: [{ rotate: rotation }, { scale: scaleAnim }],
+        },
+      ]}
+      accessibilityLabel="Dice">
+      🎲
+    </Animated.Text>
+  );
+}
+
+function BoringTaxRow({
+  option,
+  selected,
+  onToggle,
+  onDelete,
+}: {
+  option: BoringTaxOption;
+  selected: boolean;
+  onToggle: () => void;
+  onDelete?: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <View
+      style={[
+        styles.boringTaxRow,
+        {
+          backgroundColor: selected ? theme.accentTertiary : theme.surface,
+          borderColor: selected ? theme.accent : theme.surfaceBorder,
+        },
+      ]}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: selected }}
+        accessibilityLabel={option.label}
+        style={({ pressed, focused }: PressableFocusState) => [
+          styles.boringTaxMain,
+          pressed && styles.pressed,
+          focused && Platform.OS === 'web' ? styles.focusRing : null,
+        ]}>
+        <View
+          style={[
+            styles.checkbox,
+            {
+              borderColor: selected ? theme.accent : theme.surfaceBorder,
+              backgroundColor: selected ? theme.accent : 'transparent',
+            },
+          ]}>
+          {selected ? <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text> : null}
+        </View>
+        <Text style={[styles.boringTaxLabel, { color: theme.text }]}>{option.label}</Text>
+      </Pressable>
+      {onDelete ? (
+        <Pressable
+          onPress={onDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${option.label}`}
+          hitSlop={8}
+          style={({ pressed, focused }: PressableFocusState) => [
+            styles.editCancelBtn,
+            pressed && styles.pressed,
+            focused && Platform.OS === 'web' ? styles.focusRing : null,
+          ]}>
+          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 function BlockerChecklistRow({
   item,
   isEditing,
@@ -1228,12 +1349,41 @@ export default function CantStartScreen() {
   const [versionZeroEditingTask, setVersionZeroEditingTask] = useState(false);
   const versionZeroRewardingRef = useRef(false);
 
+  const [boredomStage, setBoredomStage] = useState<BoredomStage>('menu');
+  const [boredomMethod, setBoredomMethod] = useState<BoredomMethod | null>(null);
+  const [boredomTaskText, setBoredomTaskText] = useState('');
+  const [currentChallengeId, setCurrentChallengeId] = useState<string | null>(null);
+  const [challengeStarted, setChallengeStarted] = useState(false);
+  const [challengeShuffleKey, setChallengeShuffleKey] = useState(0);
+  const [interestingPartText, setInterestingPartText] = useState('');
+  const [breakActivity, setBreakActivity] = useState('');
+  const [breakReturnAction, setBreakReturnAction] = useState('');
+  const [breakReturnPrefillDone, setBreakReturnPrefillDone] = useState(false);
+  const [breakDuration, setBreakDuration] = useState(10);
+  const [isBreakDurationCustom, setIsBreakDurationCustom] = useState(false);
+  const [breakCustomMinutes, setBreakCustomMinutes] = useState('');
+  const [breakRunKey, setBreakRunKey] = useState(0);
+  const [selectedBoringTaxIds, setSelectedBoringTaxIds] = useState<string[]>([]);
+  const [customBoringTaxText, setCustomBoringTaxText] = useState('');
+  const [customBoringTaxOptions, setCustomBoringTaxOptions] = useState<BoringTaxOption[]>([]);
+  const [showCustomBoringTax, setShowCustomBoringTax] = useState(false);
+  const [boredomRewarded, setBoredomRewarded] = useState(false);
+  const [boredomXpEarned, setBoredomXpEarned] = useState(0);
+  const [bdInputFocused, setBdInputFocused] = useState(false);
+  const boredomRewardingRef = useRef(false);
+  const boredomStageRef = useRef<BoredomStage>('menu');
+
   const isTooBigFlow = stuckType === 'too-big';
   const isNoBeginningFlow = stuckType === 'no-beginning';
   const isVersionZeroFlow = stuckType === 'scared-bad';
+  const isBoredomFlow = stuckType === 'bored';
   const showContextStage = isTooBigFlow && tooBigStage === 'context';
   const showLegacyQuestStage =
-    Boolean(stuckType) && !isTooBigFlow && !isNoBeginningFlow && !isVersionZeroFlow;
+    Boolean(stuckType) &&
+    !isTooBigFlow &&
+    !isNoBeginningFlow &&
+    !isVersionZeroFlow &&
+    !isBoredomFlow;
   const suggestedContextOption = taskContextOptions.find((o) => o.id === suggestedContext);
 
   const flowTemplate = confirmedContext ? taskFlowTemplates[confirmedContext] : null;
@@ -1246,9 +1396,12 @@ export default function CantStartScreen() {
   const isSuccessNarrow = viewportWidth >= CHECKLIST_NARROW_BREAKPOINT;
   const isDesktopLayout = viewportWidth >= 768;
   const methodColumns = viewportWidth >= 768 ? 3 : 1;
+  const boredomMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const methodGap = viewportWidth >= 768 ? 16 : 12;
   const nbSectionGap = isDesktopLayout ? 32 : 22;
   const nbFieldGap = isDesktopLayout ? 26 : 20;
+  const bdSectionGap = isDesktopLayout ? 32 : 22;
+  const bdFieldGap = isDesktopLayout ? 26 : 20;
   const customDurationErrorText = isCustomDuration ? customDurationError(customDurationInput) : null;
   const resolvedCustomMinutes = parseCustomMinutes(customDurationInput);
   const canStartTimer = isCustomDuration
@@ -1259,6 +1412,18 @@ export default function CantStartScreen() {
     ? parseCustomMinutes(cueTimerCustomInput)
     : cueDuration;
   const canStartCueTimer = isCueTimerCustom ? resolvedCueTimerMinutes !== null : true;
+  const breakCustomErrorText = isBreakDurationCustom
+    ? customDurationError(breakCustomMinutes)
+    : null;
+  const resolvedBreakMinutes = isBreakDurationCustom
+    ? parseCustomMinutes(breakCustomMinutes)
+    : breakDuration;
+  const canStartBreak =
+    breakActivity.trim().length > 0 &&
+    breakReturnAction.trim().length > 0 &&
+    (isBreakDurationCustom
+      ? resolvedBreakMinutes !== null
+      : (BREAK_DURATION_PRESETS as readonly number[]).includes(breakDuration));
   const timerDisplayTitle =
     timerOrigin === 'start-cue' ? cueWill.trim() : noBeginningTaskText.trim();
   const cueReadyGap = isDesktopLayout ? 28 : 22;
@@ -1284,8 +1449,40 @@ export default function CantStartScreen() {
       ? getVersionZeroPrompt(versionZeroTaskKind, versionZeroMode)
       : '';
 
+  const boredomTaskKind = useMemo(
+    () => inferBoredomTaskKind(boredomTaskText),
+    [boredomTaskText],
+  );
+  const currentChallenge = useMemo(
+    () => getBoredomChallengeById(currentChallengeId),
+    [currentChallengeId],
+  );
+  const allBoringTaxOptions = useMemo(
+    () => [...BORING_TAX_OPTIONS, ...customBoringTaxOptions],
+    [customBoringTaxOptions],
+  );
+  const selectedBoringTaxLabels = useMemo(
+    () =>
+      allBoringTaxOptions
+        .filter((option) => selectedBoringTaxIds.includes(option.id))
+        .map((option) => option.label),
+    [allBoringTaxOptions, selectedBoringTaxIds],
+  );
+  const boringTaxSummary = formatBoringTaxSummary(selectedBoringTaxLabels);
+  const boredomCompletionCopy =
+    boredomMethod !== null ? BOREDOM_COMPLETION_COPY[boredomMethod] : null;
+
+  boredomStageRef.current = boredomStage;
+
   const quests = useMemo(() => {
-    if (!stuckType || stuckType === 'too-big' || stuckType === 'scared-bad') return [];
+    if (
+      !stuckType ||
+      stuckType === 'too-big' ||
+      stuckType === 'scared-bad' ||
+      stuckType === 'bored'
+    ) {
+      return [];
+    }
     return getTinyQuests(stuckType, profile?.energyLevel);
   }, [stuckType, profile?.energyLevel]);
 
@@ -1382,6 +1579,207 @@ export default function CantStartScreen() {
     versionZeroRewardingRef.current = false;
   };
 
+  const resetBoredomState = () => {
+    setBoredomStage('menu');
+    setBoredomMethod(null);
+    setBoredomTaskText('');
+    setCurrentChallengeId(null);
+    setChallengeStarted(false);
+    setChallengeShuffleKey(0);
+    setInterestingPartText('');
+    setBreakActivity('');
+    setBreakReturnAction('');
+    setBreakReturnPrefillDone(false);
+    setBreakDuration(10);
+    setIsBreakDurationCustom(false);
+    setBreakCustomMinutes('');
+    setBreakRunKey(0);
+    setSelectedBoringTaxIds([]);
+    setCustomBoringTaxText('');
+    setCustomBoringTaxOptions([]);
+    setShowCustomBoringTax(false);
+    setBoredomRewarded(false);
+    setBoredomXpEarned(0);
+    boredomRewardingRef.current = false;
+  };
+
+  const returnToBoredomMenu = () => {
+    setBoredomStage('menu');
+    setBoredomMethod(null);
+    setChallengeStarted(false);
+  };
+
+  const tryAnotherBoredomTool = () => {
+    setBoredomRewarded(false);
+    setBoredomXpEarned(0);
+    boredomRewardingRef.current = false;
+    setBoredomMethod(null);
+    setChallengeStarted(false);
+    setCurrentChallengeId(null);
+    setChallengeShuffleKey(0);
+    setInterestingPartText('');
+    setBreakActivity('');
+    setBreakReturnAction('');
+    setBreakReturnPrefillDone(false);
+    setBreakDuration(10);
+    setIsBreakDurationCustom(false);
+    setBreakCustomMinutes('');
+    setBreakRunKey(0);
+    setSelectedBoringTaxIds([]);
+    setCustomBoringTaxText('');
+    setCustomBoringTaxOptions([]);
+    setShowCustomBoringTax(false);
+    setBoredomStage('menu');
+  };
+
+  const selectBoredomMethod = (method: BoredomMethod) => {
+    setBoredomMethod(method);
+    if (method === 'challenge') {
+      const challenge = pickBoredomChallenge(boredomTaskKind);
+      setCurrentChallengeId(challenge.id);
+      setChallengeStarted(false);
+      setChallengeShuffleKey(0);
+      setBoredomStage('challenge');
+      return;
+    }
+    if (method === 'interesting-part') {
+      setBoredomStage('interesting-part');
+      return;
+    }
+    if (method === 'fun-break') {
+      if (!breakReturnPrefillDone && boredomTaskText.trim()) {
+        setBreakReturnAction(`Return to: ${boredomTaskText.trim()}`);
+        setBreakReturnPrefillDone(true);
+      }
+      setBoredomStage('break-setup');
+      return;
+    }
+    setBoredomStage('boring-tax');
+  };
+
+  const rollBoredomChallenge = () => {
+    const next = pickBoredomChallenge(boredomTaskKind, currentChallengeId ?? undefined);
+    setCurrentChallengeId(next.id);
+    setChallengeStarted(false);
+    setChallengeShuffleKey((key) => key + 1);
+  };
+
+  const awardBoredomWin = (title: string, category: TinyWinCategory) => {
+    if (boredomRewarded || boredomRewardingRef.current) return;
+    boredomRewardingRef.current = true;
+    addTinyWin(title.slice(0, 80), category, false);
+    markAchievementEvent('cant-start-quest');
+    setBoredomRewarded(true);
+    setBoredomXpEarned(BOREDOM_XP);
+    setBoredomStage('complete');
+  };
+
+  const completeChallengeWin = () => {
+    if (!currentChallenge) return;
+    const title = buildBoredomWinTitle({
+      method: 'challenge',
+      challengeText: currentChallenge.text,
+    });
+    const category = inferTinyWinCategory(boredomTaskText, 'creative');
+    awardBoredomWin(title, category);
+  };
+
+  const completeInterestingPartWin = () => {
+    const part = interestingPartText.trim();
+    if (!part) return;
+    const title = buildBoredomWinTitle({
+      method: 'interesting-part',
+      interestingPart: part,
+    });
+    const category = inferTinyWinCategory(boredomTaskText || part, 'creative');
+    awardBoredomWin(title, category);
+  };
+
+  const completeBreakWin = () => {
+    const title = buildBoredomWinTitle({
+      method: 'fun-break',
+      taskText: boredomTaskText,
+    });
+    const category = inferTinyWinCategory(boredomTaskText, 'body-reset');
+    awardBoredomWin(title, category);
+  };
+
+  const completeBoringTaxWin = () => {
+    if (selectedBoringTaxLabels.length === 0) return;
+    const title = buildBoredomWinTitle({
+      method: 'boring-tax',
+      boringTaxLabel: selectedBoringTaxLabels[0],
+    });
+    const category = inferTinyWinCategory(boredomTaskText, 'work-study');
+    awardBoredomWin(title, category);
+  };
+
+  const startIntentionalBreak = () => {
+    if (!canStartBreak || resolvedBreakMinutes === null) return;
+    if (isBreakDurationCustom) {
+      setBreakDuration(resolvedBreakMinutes);
+    }
+    setBreakRunKey((key) => key + 1);
+    setBoredomStage('break-running');
+  };
+
+  const addExtraBreakMinutes = () => {
+    setBreakDuration(5);
+    setIsBreakDurationCustom(false);
+    setBreakCustomMinutes('');
+    setBreakRunKey((key) => key + 1);
+    setBoredomStage('break-running');
+  };
+
+  const toggleBoringTaxOption = (id: string) => {
+    setSelectedBoringTaxIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
+  const submitCustomBoringTax = () => {
+    const trimmed = customBoringTaxText.trim();
+    if (!trimmed) return;
+    const id = `custom-tax-${Date.now()}`;
+    const option: BoringTaxOption = { id, label: trimmed.slice(0, TASK_TEXT_MAX) };
+    setCustomBoringTaxOptions((prev) => [...prev, option]);
+    setSelectedBoringTaxIds((prev) => [...prev, id]);
+    setCustomBoringTaxText('');
+    setShowCustomBoringTax(false);
+  };
+
+  const deleteCustomBoringTax = (id: string) => {
+    setCustomBoringTaxOptions((prev) => prev.filter((option) => option.id !== id));
+    setSelectedBoringTaxIds((prev) => prev.filter((item) => item !== id));
+  };
+
+  const backFromBoredomComplete = () => {
+    if (boredomMethod === 'challenge') {
+      setBoredomStage('challenge');
+      return;
+    }
+    if (boredomMethod === 'interesting-part') {
+      setBoredomStage('interesting-part');
+      return;
+    }
+    if (boredomMethod === 'fun-break') {
+      setBoredomStage('break-result');
+      return;
+    }
+    setBoredomStage('boring-tax');
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (boredomStageRef.current === 'break-running') {
+          setBoredomStage('break-setup');
+          setBreakRunKey((key) => key + 1);
+        }
+      };
+    }, []),
+  );
+
   const selectVersionZeroMode = (mode: VersionZeroMode) => {
     setVersionZeroMode(mode);
     setVersionZeroReminder(pickVersionZeroReminder());
@@ -1438,14 +1836,22 @@ export default function CantStartScreen() {
       resetTooBigLocalState();
       resetNoBeginningState();
       resetVersionZeroState();
+      resetBoredomState();
     } else if (type === 'no-beginning') {
       resetTooBigLocalState();
       resetVersionZeroState();
       resetNoBeginningState();
+      resetBoredomState();
     } else if (type === 'scared-bad') {
       resetTooBigLocalState();
       resetNoBeginningState();
       resetVersionZeroState();
+      resetBoredomState();
+    } else if (type === 'bored') {
+      resetTooBigLocalState();
+      resetNoBeginningState();
+      resetVersionZeroState();
+      resetBoredomState();
     } else {
       setTooBigStage('context');
       setManualContext(null);
@@ -1456,6 +1862,7 @@ export default function CantStartScreen() {
       resetSessionProgress();
       resetNoBeginningState();
       resetVersionZeroState();
+      resetBoredomState();
     }
   };
 
@@ -1464,6 +1871,7 @@ export default function CantStartScreen() {
     resetTooBigLocalState();
     resetNoBeginningState();
     resetVersionZeroState();
+    resetBoredomState();
   };
 
   const returnToActivationMenu = () => {
@@ -3037,6 +3445,800 @@ export default function CantStartScreen() {
             </View>
           ) : null}
 
+          {isBoredomFlow && boredomStage === 'menu' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.boredomMenuInner]}>
+                <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>I&apos;M BORED</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Let&apos;s make this less boring.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: bdSectionGap },
+                  ]}>
+                  Boredom does not always mean you are lazy or doing the wrong thing. The task may
+                  need novelty, a different entry point, or a real break.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: bdSectionGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    The task is allowed to be boring. The way you enter it doesn&apos;t have to be.
+                  </Text>
+                </GlassCard>
+
+                <View style={[styles.taskFieldBlock, { marginBottom: bdSectionGap }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What are you trying to do?
+                  </Text>
+                  <TextInput
+                    value={boredomTaskText}
+                    onChangeText={(v) => setBoredomTaskText(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="e.g. clean the kitchen, finish a report, answer emails"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="What are you trying to do?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => {}}
+                    onFocus={() => setBdInputFocused(true)}
+                    onBlur={() => setBdInputFocused(false)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: bdInputFocused ? theme.accent : theme.surfaceBorder,
+                      },
+                      bdInputFocused && styles.taskInputFocused,
+                    ]}
+                  />
+                  <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                    We&apos;ll use this to make the suggestions a little more relevant.
+                  </Text>
+                </View>
+
+                <ActivationMethodsGrid columns={boredomMethodColumns} gap={methodGap}>
+                  {BOREDOM_METHODS.map((method) => (
+                    <ActivationMethodCard
+                      key={method.id}
+                      icon={method.icon}
+                      title={method.title}
+                      description={method.description}
+                      onPress={() => selectBoredomMethod(method.id)}
+                    />
+                  ))}
+                </ActivationMethodsGrid>
+              </View>
+            </View>
+          ) : null}
+
+          {isBoredomFlow && boredomStage === 'challenge' && currentChallenge ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.boredomActiveInner]}>
+                <InternalBack label="Back to boredom tools" onPress={returnToBoredomMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>ROLL A CHALLENGE</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Let&apos;s give the task a weird little rule.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  You are not committing to the whole task. Try one playful constraint and see
+                  whether your brain wakes up.
+                </Text>
+
+                {boredomTaskText.trim() ? (
+                  <Text style={[styles.taskSummary, { color: theme.textSecondary }]}>
+                    You&apos;re trying to:{' '}
+                    <Text style={{ color: theme.text, fontWeight: '600' }}>
+                      {boredomTaskText.trim().charAt(0).toUpperCase() +
+                        boredomTaskText.trim().slice(1)}
+                    </Text>
+                  </Text>
+                ) : null}
+
+                <GlassCard
+                  style={[
+                    styles.boredomChallengeCard,
+                    {
+                      borderColor: theme.accent,
+                      marginBottom: spacing.lg,
+                    },
+                  ]}>
+                  <BoredomChallengeDice shuffleKey={challengeShuffleKey} />
+                  <Text style={[styles.vzModeLabel, { color: theme.textMuted }]}>
+                    {currentChallenge.categoryLabel}
+                  </Text>
+                  <Text style={[styles.vzInstructionText, { color: theme.text }]}>
+                    {currentChallenge.text}
+                  </Text>
+                  {currentChallenge.explanation ? (
+                    <Text style={[styles.vzInstructionSupport, { color: theme.textSecondary }]}>
+                      {currentChallenge.explanation}
+                    </Text>
+                  ) : null}
+                </GlassCard>
+
+                <View style={styles.actionStack}>
+                  {boredomRewarded ? (
+                    <>
+                      <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                        <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                          Tiny win saved ✓
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={returnToBoredomMenu}
+                        accessibilityRole="button"
+                        accessibilityLabel="Choose a different approach"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Choose a different approach
+                        </Text>
+                      </Pressable>
+                    </>
+                  ) : !challengeStarted ? (
+                    <>
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label="Try this challenge"
+                          onPress={() => setChallengeStarted(true)}
+                          small
+                        />
+                      </View>
+                      <Pressable
+                        onPress={rollBoredomChallenge}
+                        accessibilityRole="button"
+                        accessibilityLabel="Roll again"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Roll again ↻
+                        </Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label={`I tried it +${BOREDOM_XP} XP`}
+                          onPress={completeChallengeWin}
+                          small
+                        />
+                      </View>
+                      <Pressable
+                        onPress={rollBoredomChallenge}
+                        accessibilityRole="button"
+                        accessibilityLabel="Pick a different challenge"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Pick a different challenge
+                        </Text>
+                      </Pressable>
+                    </>
+                  )}
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isBoredomFlow && boredomStage === 'interesting-part' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.boredomActiveInner]}>
+                <InternalBack label="Back to boredom tools" onPress={returnToBoredomMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>
+                  START SOMEWHERE INTERESTING
+                </Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  You are allowed to work out of order.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: bdFieldGap },
+                  ]}>
+                  The correct first step is not always the best first step. Begin with the part that
+                  gives your brain something to care about.
+                </Text>
+
+                {boredomTaskText.trim() ? (
+                  <Text style={[styles.taskSummary, { color: theme.textSecondary }]}>
+                    You&apos;re trying to:{' '}
+                    <Text style={{ color: theme.text, fontWeight: '600' }}>
+                      {boredomTaskText.trim().charAt(0).toUpperCase() +
+                        boredomTaskText.trim().slice(1)}
+                    </Text>
+                  </Text>
+                ) : null}
+
+                <View style={[styles.taskFieldBlock, { marginBottom: bdFieldGap }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    Which part feels least boring?
+                  </Text>
+                  <TextInput
+                    value={interestingPartText}
+                    onChangeText={(v) => setInterestingPartText(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="e.g. choosing the images, styling the last slide, organizing one shelf"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="Which part feels least boring?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => {}}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: theme.surfaceBorder,
+                      },
+                    ]}
+                  />
+                  <View style={styles.exampleRow}>
+                    {INTERESTING_PART_PRESETS.map((preset) => (
+                      <TagPill
+                        key={preset}
+                        label={preset}
+                        onPress={() => setInterestingPartText(preset.slice(0, TASK_TEXT_MAX))}
+                      />
+                    ))}
+                  </View>
+                </View>
+
+                {interestingPartText.trim() ? (
+                  <GlassCard
+                    style={[
+                      styles.vzStatementCard,
+                      {
+                        backgroundColor: theme.accentTertiary,
+                        borderColor: theme.accent,
+                        marginBottom: bdFieldGap,
+                      },
+                    ]}>
+                    <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                      Start with: {interestingPartText.trim()}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.cueSupportText,
+                        { color: theme.textSecondary, marginTop: spacing.sm },
+                      ]}>
+                      You can return to the &quot;correct&quot; order later.
+                    </Text>
+                  </GlassCard>
+                ) : null}
+
+                <View style={styles.actionStack}>
+                  {boredomRewarded ? (
+                    <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                      <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                        Tiny win saved ✓
+                      </Text>
+                    </View>
+                  ) : (
+                    <View
+                      style={[
+                        styles.compactBtn,
+                        !interestingPartText.trim() && styles.continueDisabled,
+                      ]}>
+                      <GradientButton
+                        label={`I started with this part +${BOREDOM_XP} XP`}
+                        onPress={completeInterestingPartWin}
+                        small
+                      />
+                    </View>
+                  )}
+                  <Pressable
+                    onPress={returnToBoredomMenu}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose a different approach"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.quietAction,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      Choose a different approach
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isBoredomFlow && boredomStage === 'break-setup' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.boredomActiveInner]}>
+                <InternalBack label="Back to boredom tools" onPress={returnToBoredomMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>INTENTIONAL BREAK</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Take a break with an ending.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: bdFieldGap },
+                  ]}>
+                  Sometimes boredom means your brain needs a real switch. Choose something pleasant,
+                  give it a limit, and leave yourself one gentle step back.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: bdFieldGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    A break can be a tool when it has an ending and a way back.
+                  </Text>
+                </GlassCard>
+
+                <View style={[styles.taskFieldBlock, { marginBottom: bdFieldGap }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What would feel good right now?
+                  </Text>
+                  <TextInput
+                    value={breakActivity}
+                    onChangeText={(v) => setBreakActivity(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="e.g. make coffee, watch one video, play one round"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="What would feel good right now?"
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: theme.surfaceBorder,
+                      },
+                    ]}
+                  />
+                  <View style={styles.exampleRow}>
+                    {BREAK_ACTIVITY_PRESETS.map((preset) => (
+                      <TagPill
+                        key={preset}
+                        label={preset}
+                        onPress={() => setBreakActivity(preset.slice(0, TASK_TEXT_MAX))}
+                      />
+                    ))}
+                  </View>
+                </View>
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  Duration
+                </Text>
+                <View style={styles.durationRow}>
+                  {BREAK_DURATION_PRESETS.map((mins) => (
+                    <DurationChip
+                      key={mins}
+                      label={`${mins} min`}
+                      selected={!isBreakDurationCustom && breakDuration === mins}
+                      onPress={() => {
+                        setIsBreakDurationCustom(false);
+                        setBreakDuration(mins);
+                      }}
+                    />
+                  ))}
+                  <DurationChip
+                    label="Custom"
+                    selected={isBreakDurationCustom}
+                    onPress={() => setIsBreakDurationCustom(true)}
+                  />
+                </View>
+
+                {isBreakDurationCustom ? (
+                  <View style={[styles.taskFieldBlock, { marginBottom: bdFieldGap }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>Custom minutes</Text>
+                    <TextInput
+                      value={breakCustomMinutes}
+                      onChangeText={(v) => setBreakCustomMinutes(sanitizeCustomMinutesInput(v))}
+                      placeholder="e.g. 7"
+                      placeholderTextColor={theme.textMuted}
+                      keyboardType="number-pad"
+                      accessibilityLabel="Custom break minutes"
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (canStartBreak) startIntentionalBreak();
+                      }}
+                      style={[
+                        styles.taskInput,
+                        styles.customDurationInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: breakCustomErrorText ? theme.accent : theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    {breakCustomErrorText ? (
+                      <Text style={[styles.validationText, { color: theme.accent }]}>
+                        {breakCustomErrorText}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                <View style={[styles.taskFieldBlock, { marginBottom: bdFieldGap }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What will you come back to?
+                  </Text>
+                  <TextInput
+                    value={breakReturnAction}
+                    onChangeText={(v) => setBreakReturnAction(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="e.g. open the document and write one sentence"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="What will you come back to?"
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: theme.surfaceBorder,
+                      },
+                    ]}
+                  />
+                </View>
+
+                <View style={styles.actionStack}>
+                  <View style={[styles.compactBtn, !canStartBreak && styles.continueDisabled]}>
+                    <GradientButton
+                      label="Start my intentional break"
+                      onPress={startIntentionalBreak}
+                      small
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isBoredomFlow && boredomStage === 'break-running' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.timerRunningInner]}>
+                <InternalBack
+                  label="Back to break setup"
+                  onPress={() => {
+                    setBreakRunKey((key) => key + 1);
+                    setBoredomStage('break-setup');
+                  }}
+                />
+                <GentleTimer
+                  key={`boredom-break-${breakRunKey}-${breakDuration}`}
+                  durationMinutes={breakDuration}
+                  title={`Break: ${breakActivity.trim() || 'fun break'}`}
+                  compact
+                  onFinish={() => setBoredomStage('break-result')}
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {isBoredomFlow && boredomStage === 'break-result' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.boredomActiveInner]}>
+                <InternalBack
+                  label="Back to break setup"
+                  onPress={() => setBoredomStage('break-setup')}
+                />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>YOUR WAY BACK</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  The break had an ending.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: bdFieldGap },
+                  ]}>
+                  You can stop here, or return for one tiny round. No need to finish the whole task.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: bdFieldGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    Come back to: {breakReturnAction.trim()}
+                  </Text>
+                </GlassCard>
+
+                <View style={styles.actionStack}>
+                  {boredomRewarded ? (
+                    <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                      <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                        Tiny win saved ✓
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.compactBtn}>
+                      <GradientButton
+                        label={`I'm back at the task +${BOREDOM_XP} XP`}
+                        onPress={completeBreakWin}
+                        small
+                      />
+                    </View>
+                  )}
+                  <GradientButton
+                    label="Add 5 more minutes"
+                    onPress={addExtraBreakMinutes}
+                    variant="secondary"
+                    small
+                    style={styles.compactBtn}
+                  />
+                  <Pressable
+                    onPress={returnToBoredomMenu}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose another boredom tool"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.quietAction,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      Choose another boredom tool
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isBoredomFlow && boredomStage === 'boring-tax' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.boredomActiveInner]}>
+                <InternalBack label="Back to boredom tools" onPress={returnToBoredomMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>
+                  REMOVE THE BORING TAX
+                </Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  You do not have to do every part the hard way.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: bdFieldGap },
+                  ]}>
+                  Pick one shortcut or a few. Simplifying the process is still doing the task.
+                </Text>
+
+                <View style={styles.blockerList}>
+                  {allBoringTaxOptions.map((option) => (
+                    <BoringTaxRow
+                      key={option.id}
+                      option={option}
+                      selected={selectedBoringTaxIds.includes(option.id)}
+                      onToggle={() => toggleBoringTaxOption(option.id)}
+                      onDelete={
+                        option.id.startsWith('custom-tax-')
+                          ? () => deleteCustomBoringTax(option.id)
+                          : undefined
+                      }
+                    />
+                  ))}
+                  {!showCustomBoringTax ? (
+                    <Pressable
+                      onPress={() => setShowCustomBoringTax(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Write my own shortcut"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.customBlockerBtn,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.addStepText, { color: theme.accentSecondary }]}>
+                        + Write my own shortcut
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.customBlockerInputRow}>
+                      <TextInput
+                        value={customBoringTaxText}
+                        onChangeText={(v) => setCustomBoringTaxText(v.slice(0, TASK_TEXT_MAX))}
+                        placeholder="Describe one shortcut..."
+                        placeholderTextColor={theme.textMuted}
+                        maxLength={TASK_TEXT_MAX}
+                        accessibilityLabel="Custom shortcut"
+                        returnKeyType="done"
+                        onSubmitEditing={submitCustomBoringTax}
+                        autoFocus
+                        style={[
+                          styles.taskInput,
+                          styles.customBlockerInput,
+                          {
+                            color: theme.text,
+                            backgroundColor: theme.surface,
+                            borderColor: theme.surfaceBorder,
+                          },
+                        ]}
+                      />
+                      <View style={styles.customBlockerInputActions}>
+                        <Pressable
+                          onPress={submitCustomBoringTax}
+                          accessibilityRole="button"
+                          accessibilityLabel="Add shortcut"
+                          style={[
+                            styles.editSaveBtn,
+                            { backgroundColor: theme.accentSecondary + '44' },
+                          ]}>
+                          <Text style={[styles.editSaveText, { color: theme.text }]}>Add</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setShowCustomBoringTax(false);
+                            setCustomBoringTaxText('');
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel custom shortcut"
+                          hitSlop={8}
+                          style={styles.editCancelBtn}>
+                          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {selectedBoringTaxLabels.length > 0 ? (
+                  <GlassCard style={[styles.boredomSummaryCard, { marginTop: bdFieldGap }]}>
+                    <Text style={[styles.vzModeLabel, { color: theme.textMuted }]}>
+                      Your shortcut plan
+                    </Text>
+                    <Text style={[styles.boredomSummaryText, { color: theme.text }]}>
+                      {boringTaxSummary}
+                    </Text>
+                  </GlassCard>
+                ) : null}
+
+                <View style={[styles.actionStack, { marginTop: bdFieldGap }]}>
+                  {boredomRewarded ? (
+                    <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                      <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                        Tiny win saved ✓
+                      </Text>
+                    </View>
+                  ) : (
+                    <View
+                      style={[
+                        styles.compactBtn,
+                        selectedBoringTaxLabels.length === 0 && styles.continueDisabled,
+                      ]}>
+                      <GradientButton
+                        label={`I used this shortcut +${BOREDOM_XP} XP`}
+                        onPress={completeBoringTaxWin}
+                        small
+                      />
+                    </View>
+                  )}
+                  <Pressable
+                    onPress={() => setSelectedBoringTaxIds([])}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear my choices"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.quietAction,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      Clear my choices
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isBoredomFlow && boredomStage === 'complete' && boredomCompletionCopy ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.boredomCompleteInner]}>
+                <InternalBack label="Back to my boredom tool" onPress={backFromBoredomComplete} />
+                <GlassCard style={styles.successCard}>
+                  <Text style={styles.vzCompleteBadge} accessibilityLabel="Celebration">
+                    ✨
+                  </Text>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>
+                    {boredomCompletionCopy.headline}
+                  </Text>
+                  <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                    {boredomCompletionCopy.body}
+                  </Text>
+                  <View style={styles.sessionStats}>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      1 boredom strategy used
+                    </Text>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      +{boredomXpEarned} XP earned
+                    </Text>
+                    <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
+                      Your garden grows from creative starts too.
+                    </Text>
+                  </View>
+                  <View style={styles.successActions}>
+                    <View style={styles.successBtn}>
+                      <GradientButton
+                        label="Back to dashboard"
+                        onPress={() => router.push('/dashboard' as never)}
+                        small
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.successLinks}>
+                    <Pressable
+                      onPress={tryAnotherBoredomTool}
+                      accessibilityRole="button"
+                      accessibilityLabel="Try another boredom tool"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Try another boredom tool
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push('/garden' as never)}
+                      accessibilityRole="link"
+                      accessibilityLabel="Check out your garden"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.accentSecondary }]}>
+                        Check out your garden
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={returnToStuckTypes}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose another stuck type"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Choose another stuck type
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
           {showLegacyQuestStage ? (
             <>
               <Text style={[styles.headline, { color: theme.text }]}>Starting is a task too.</Text>
@@ -3935,5 +5137,63 @@ const styles = StyleSheet.create({
     lineHeight: 42,
     textAlign: 'center',
     marginBottom: spacing.xs,
+  },
+  boredomMenuInner: {
+    maxWidth: BOREDOM_MENU_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  boredomActiveInner: {
+    maxWidth: BOREDOM_ACTIVE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  boredomCompleteInner: {
+    maxWidth: BOREDOM_COMPLETE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  boredomChallengeCard: {
+    padding: spacing.lg,
+    gap: spacing.sm,
+    width: '100%',
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  boredomDice: {
+    fontSize: 48,
+    lineHeight: 56,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  boredomSummaryCard: {
+    width: '100%',
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  boredomSummaryText: {
+    ...typography.body,
+    lineHeight: 24,
+    fontWeight: '600',
+  },
+  boringTaxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    minHeight: 56,
+    borderWidth: 1,
+    width: '100%',
+  },
+  boringTaxMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  boringTaxLabel: {
+    ...typography.bodySmall,
+    flex: 1,
+    minWidth: 0,
+    lineHeight: 20,
   },
 });
