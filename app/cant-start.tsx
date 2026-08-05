@@ -67,6 +67,14 @@ const BLOCKER_PRESETS = [
   'Put my phone out of reach',
   'Bring what I need closer',
   'Clear one small working space',
+  'Open only the file or tool I need',
+  'Silence notifications for a few minutes',
+  'Find the item or information I need',
+  'Move one distracting thing out of sight',
+  'Get the charger, cable, or tool I need',
+  'Ask for the missing information',
+  'Close one thing I am not using',
+  'Put everything else into one temporary pile',
 ];
 
 const ACTIVATION_METHODS = [
@@ -130,8 +138,26 @@ type NoBeginningStage =
 const METHOD_LABELS: Record<NoBeginningMethod, string> = {
   timer: 'Tiny timer',
   cue: 'Start cue',
-  blocker: 'Clear one blocker',
+  blocker: 'Clear the way',
 };
+
+type BlockerItem = {
+  id: string;
+  text: string;
+  completed: boolean;
+  rewarded: boolean;
+  isCustom: boolean;
+};
+
+function makeBlockerItems(): BlockerItem[] {
+  return BLOCKER_PRESETS.map((text, index) => ({
+    id: `blocker-preset-${index}`,
+    text,
+    completed: false,
+    rewarded: false,
+    isCustom: false,
+  }));
+}
 
 type TaskContextOption = {
   id: TaskContext;
@@ -305,9 +331,10 @@ function buildCueWinTitle(cueWill: string): string {
 }
 
 function buildBlockerWinTitle(taskText: string, blocker: string): string {
-  const trimmed = taskText.trim();
-  if (trimmed) return `Cleared blocker to start: ${trimmed}`;
-  return `Cleared blocker: ${blocker.slice(0, 40)}`;
+  const task = taskText.trim();
+  const blockerShort = blocker.slice(0, 40);
+  if (task) return `Cleared blocker for ${task}: ${blockerShort}`;
+  return `Cleared blocker: ${blockerShort}`;
 }
 
 function sanitizeCustomMinutesInput(value: string): string {
@@ -548,57 +575,152 @@ function DurationChip({
   );
 }
 
-function BlockerCheckRow({
-  label,
-  checked,
-  onPress,
+function BlockerChecklistRow({
+  item,
+  isEditing,
+  editingText,
+  onEditingTextChange,
+  onToggleComplete,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+  stepXp,
 }: {
-  label: string;
-  checked: boolean;
-  onPress: () => void;
+  item: BlockerItem;
+  isEditing: boolean;
+  editingText: string;
+  onEditingTextChange: (text: string) => void;
+  onToggleComplete: () => void;
+  onStartEdit: () => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: () => void;
+  stepXp: number;
 }) {
   const theme = useAppTheme();
 
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked }}
-      accessibilityLabel={label}
-      style={({ pressed }) => [styles.blockerCheckPressable, pressed && styles.pressed]}>
+  if (isEditing) {
+    return (
       <View
         style={[
-          styles.blockerCheckRow,
+          styles.checkRow,
           {
             backgroundColor: theme.surface,
-            borderColor: checked ? theme.accentSecondary : theme.surfaceBorder,
-            opacity: checked ? 0.78 : 1,
+            borderColor: theme.accent,
+            borderWidth: 2,
           },
         ]}>
+        <TextInput
+          value={editingText}
+          onChangeText={onEditingTextChange}
+          placeholder="Blocker text"
+          placeholderTextColor={theme.textMuted}
+          autoFocus
+          returnKeyType="done"
+          blurOnSubmit={false}
+          onSubmitEditing={onSaveEdit}
+          accessibilityLabel={`Edit: ${item.text || 'new blocker'}`}
+          style={[
+            styles.editInput,
+            {
+              color: theme.text,
+              backgroundColor: theme.background,
+              borderColor: theme.surfaceBorder,
+            },
+          ]}
+        />
+        <Pressable
+          onPress={onSaveEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Save blocker"
+          style={[styles.editSaveBtn, { backgroundColor: theme.accentSecondary + '44' }]}>
+          <Text style={[styles.editSaveText, { color: theme.text }]}>Save</Text>
+        </Pressable>
+        <Pressable
+          onPress={onCancelEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel edit"
+          hitSlop={8}
+          style={styles.editCancelBtn}>
+          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.checkRow,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.surfaceBorder,
+          borderWidth: 1,
+          opacity: item.completed ? 0.72 : 1,
+        },
+      ]}>
+      <Pressable
+        onPress={onToggleComplete}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: item.completed }}
+        accessibilityLabel={
+          item.completed ? `Uncheck: ${item.text}` : `Complete: ${item.text}`
+        }
+        style={({ pressed }) => [styles.checkRowMain, pressed && styles.pressed]}>
         <View
           style={[
-            styles.blockerCheckbox,
-            checked
+            styles.checkbox,
+            item.completed
               ? {
                   borderColor: theme.accentSecondary,
                   backgroundColor: theme.accentSecondary + '55',
                 }
               : { borderColor: theme.surfaceBorder, backgroundColor: 'transparent' },
           ]}>
-          {checked ? <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text> : null}
+          {item.completed ? (
+            <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text>
+          ) : null}
         </View>
         <Text
           style={[
-            styles.blockerCheckText,
+            styles.checkText,
             {
               color: theme.text,
-              textDecorationLine: checked ? 'line-through' : 'none',
+              textDecorationLine: item.completed ? 'line-through' : 'none',
             },
           ]}>
-          {label}
+          {item.text}
         </Text>
+        {!item.completed ? (
+          <Text style={[styles.rowXp, { color: theme.textMuted }]}>+{stepXp} XP</Text>
+        ) : null}
+      </Pressable>
+      <View style={styles.rowActions}>
+        <Pressable
+          onPress={onStartEdit}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accentSecondary + '22' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowEditIcon, { color: theme.accentSecondary }]}>✎</Text>
+        </Pressable>
+        <Pressable
+          onPress={onDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accent + '18' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowDeleteIcon, { color: theme.accent }]}>🗑</Text>
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -881,8 +1003,14 @@ export default function CantStartScreen() {
   const [cueWhen, setCueWhen] = useState('');
   const [cueWill, setCueWill] = useState('');
   const [cueDuration, setCueDuration] = useState(5);
-  const [customBlockers, setCustomBlockers] = useState<string[]>([]);
-  const [checkedBlocker, setCheckedBlocker] = useState<string | null>(null);
+  const [isCueTimerCustom, setIsCueTimerCustom] = useState(false);
+  const [cueTimerCustomInput, setCueTimerCustomInput] = useState('');
+  const [blockerItems, setBlockerItems] = useState<BlockerItem[]>(makeBlockerItems);
+  const [blockerEditingId, setBlockerEditingId] = useState<string | null>(null);
+  const [blockerEditingText, setBlockerEditingText] = useState('');
+  const [blockerSessionXp, setBlockerSessionXp] = useState(0);
+  const [blockerCompletedCount, setBlockerCompletedCount] = useState(0);
+  const [hasMarkedBlockerAchievement, setHasMarkedBlockerAchievement] = useState(false);
   const [customBlockerText, setCustomBlockerText] = useState('');
   const [showCustomBlocker, setShowCustomBlocker] = useState(false);
   const [completedMethod, setCompletedMethod] = useState<NoBeginningMethod | null>(null);
@@ -918,9 +1046,15 @@ export default function CantStartScreen() {
   const canStartTimer = isCustomDuration
     ? resolvedCustomMinutes !== null
     : (TIMER_PRESETS as readonly number[]).includes(timerDuration);
-  const allBlockers = [...BLOCKER_PRESETS, ...customBlockers];
+  const cueTimerCustomError = isCueTimerCustom ? customDurationError(cueTimerCustomInput) : null;
+  const resolvedCueTimerMinutes = isCueTimerCustom
+    ? parseCustomMinutes(cueTimerCustomInput)
+    : cueDuration;
+  const canStartCueTimer = isCueTimerCustom ? resolvedCueTimerMinutes !== null : true;
   const timerDisplayTitle =
     timerOrigin === 'start-cue' ? cueWill.trim() : noBeginningTaskText.trim();
+  const cueReadyGap = isDesktopLayout ? 28 : 22;
+  const cueReadySmallGap = isDesktopLayout ? 22 : 18;
   const checklistTitleStyle = {
     fontSize: isDesktopLayout ? 40 : 32,
     lineHeight: isDesktopLayout ? 46 : 38,
@@ -987,6 +1121,17 @@ export default function CantStartScreen() {
     resetSessionProgress();
   };
 
+  const resetBlockerSession = () => {
+    setBlockerItems(makeBlockerItems());
+    setBlockerEditingId(null);
+    setBlockerEditingText('');
+    setBlockerSessionXp(0);
+    setBlockerCompletedCount(0);
+    setHasMarkedBlockerAchievement(false);
+    setCustomBlockerText('');
+    setShowCustomBlocker(false);
+  };
+
   const resetNoBeginningState = () => {
     setNoBeginningStage('menu');
     setNoBeginningTaskText('');
@@ -998,10 +1143,9 @@ export default function CantStartScreen() {
     setCueWhen('');
     setCueWill('');
     setCueDuration(5);
-    setCustomBlockers([]);
-    setCheckedBlocker(null);
-    setCustomBlockerText('');
-    setShowCustomBlocker(false);
+    setIsCueTimerCustom(false);
+    setCueTimerCustomInput('');
+    resetBlockerSession();
     setCompletedMethod(null);
     setMethodRewarded(false);
     setNoBeginningXpEarned(0);
@@ -1079,12 +1223,103 @@ export default function CantStartScreen() {
     goToNoBeginningComplete('cue');
   };
 
-  const saveBlockerWin = () => {
-    if (methodRewarded || !checkedBlocker) return;
-    const title = buildBlockerWinTitle(noBeginningTaskText, checkedBlocker);
-    const category = inferTinyWinCategory(noBeginningTaskText, 'body-reset');
-    awardNoBeginningWin(title, category);
+  const finishBlockerSession = () => {
+    setNoBeginningXpEarned(blockerSessionXp);
     goToNoBeginningComplete('blocker');
+  };
+
+  const toggleBlockerComplete = (id: string) => {
+    const item = blockerItems.find((row) => row.id === id);
+    if (!item || !item.text.trim()) return;
+
+    if (item.completed) {
+      setBlockerItems((prev) =>
+        prev.map((row) => (row.id === id ? { ...row, completed: false } : row)),
+      );
+      setBlockerCompletedCount((n) => Math.max(0, n - 1));
+      return;
+    }
+
+    if (!item.rewarded) {
+      const title = buildBlockerWinTitle(noBeginningTaskText, item.text);
+      const category = inferTinyWinCategory(noBeginningTaskText, 'body-reset');
+      addTinyWin(title.slice(0, 80), category, false);
+      if (!hasMarkedBlockerAchievement) {
+        markAchievementEvent('cant-start-quest');
+        setHasMarkedBlockerAchievement(true);
+      }
+      setBlockerSessionXp((xp) => xp + NO_BEGINNING_XP);
+    }
+
+    setBlockerItems((prev) =>
+      prev.map((row) =>
+        row.id === id ? { ...row, completed: true, rewarded: true } : row,
+      ),
+    );
+    setBlockerCompletedCount((n) => n + 1);
+  };
+
+  const startBlockerEdit = (id: string) => {
+    const item = blockerItems.find((row) => row.id === id);
+    if (!item) return;
+    setBlockerEditingId(id);
+    setBlockerEditingText(item.text);
+  };
+
+  const saveBlockerEdit = (id: string) => {
+    const trimmed = blockerEditingText.trim();
+    const item = blockerItems.find((row) => row.id === id);
+    if (!trimmed) {
+      if (item && !item.text.trim()) {
+        if (item.completed) setBlockerCompletedCount((n) => Math.max(0, n - 1));
+        setBlockerItems((prev) => prev.filter((row) => row.id !== id));
+      }
+      setBlockerEditingId(null);
+      setBlockerEditingText('');
+      return;
+    }
+    setBlockerItems((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, text: trimmed } : row)),
+    );
+    setBlockerEditingId(null);
+    setBlockerEditingText('');
+  };
+
+  const cancelBlockerEdit = (id: string) => {
+    const item = blockerItems.find((row) => row.id === id);
+    if (item && !item.text.trim()) {
+      if (item.completed) setBlockerCompletedCount((n) => Math.max(0, n - 1));
+      setBlockerItems((prev) => prev.filter((row) => row.id !== id));
+    }
+    setBlockerEditingId(null);
+    setBlockerEditingText('');
+  };
+
+  const deleteBlockerItem = (id: string) => {
+    const item = blockerItems.find((row) => row.id === id);
+    if (item?.completed) setBlockerCompletedCount((n) => Math.max(0, n - 1));
+    if (blockerEditingId === id) {
+      setBlockerEditingId(null);
+      setBlockerEditingText('');
+    }
+    setBlockerItems((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const submitCustomBlocker = () => {
+    const trimmed = customBlockerText.trim();
+    if (!trimmed) return;
+    setBlockerItems((prev) => [
+      ...prev,
+      {
+        id: `blocker-custom-${Date.now()}`,
+        text: trimmed,
+        completed: false,
+        rewarded: false,
+        isCustom: true,
+      },
+    ]);
+    setCustomBlockerText('');
+    setShowCustomBlocker(false);
   };
 
   const startTinyTimer = () => {
@@ -1097,7 +1332,9 @@ export default function CantStartScreen() {
   };
 
   const startCueTimer = () => {
-    setTimerDuration(cueDuration);
+    const duration = isCueTimerCustom ? resolvedCueTimerMinutes : cueDuration;
+    if (!duration) return;
+    setTimerDuration(duration);
     setTimerOrigin('start-cue');
     setTimerRunKey((k) => k + 1);
     setNoBeginningStage('timer-running');
@@ -1125,20 +1362,6 @@ export default function CantStartScreen() {
     } else {
       setNoBeginningStage('timer-setup');
     }
-  };
-
-  const toggleBlockerCheck = (blocker: string) => {
-    setCheckedBlocker((current) => (current === blocker ? null : blocker));
-  };
-
-  const submitCustomBlocker = () => {
-    const trimmed = customBlockerText.trim();
-    if (!trimmed) return;
-    if (!customBlockers.includes(trimmed) && !BLOCKER_PRESETS.includes(trimmed)) {
-      setCustomBlockers((prev) => [...prev, trimmed]);
-    }
-    setCustomBlockerText('');
-    setShowCustomBlocker(false);
   };
 
   const backFromComplete = () => {
@@ -1647,6 +1870,7 @@ export default function CantStartScreen() {
                           setCueWill(noBeginningTaskText);
                           setNoBeginningStage('cue-setup');
                         } else {
+                          resetBlockerSession();
                           setNoBeginningStage('blocker-choice');
                         }
                       }}
@@ -1940,60 +2164,111 @@ export default function CantStartScreen() {
 
           {isNoBeginningFlow && noBeginningStage === 'cue-ready' ? (
             <View style={styles.stageShell}>
-              <View style={[styles.stageInner, isSuccessNarrow && styles.successInnerDesktop]}>
-                <InternalBack label="Back to edit cue" onPress={() => setNoBeginningStage('cue-setup')} />
-                <GlassCard style={styles.cueCard}>
-                  <Text style={[styles.cueCardText, { color: theme.text }]}>
+              <View style={[styles.stageInner, styles.cueReadyInner]}>
+                <InternalBack
+                  label="Back to edit cue"
+                  onPress={() => setNoBeginningStage('cue-setup')}
+                />
+                <GlassCard style={[styles.cueStatementCard, { marginBottom: cueReadySmallGap }]}>
+                  <Text style={[styles.cueStatementText, { color: theme.text }]}>
                     When {cueWhen.trim()}, I&apos;ll {cueWill.trim()} for {cueDuration} minutes.
                   </Text>
                 </GlassCard>
-                <Text style={[styles.stageSupport, { color: theme.textSecondary, textAlign: 'center', marginBottom: nbFieldGap }]}>
+                <Text
+                  style={[
+                    styles.cueSupportText,
+                    { color: theme.textSecondary, marginBottom: cueReadyGap },
+                  ]}>
                   You do not have to finish. This is only your way into the task.
                 </Text>
 
-                <View style={[styles.cueTimerSection, { marginBottom: nbFieldGap }]}>
-                  <Text style={[styles.cueTimerTitle, { color: theme.text }]}>
-                    Want to use your cue right now?
+                <View
+                  style={[
+                    styles.cueTimerHelperPanel,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.surfaceBorder,
+                      marginBottom: cueReadyGap,
+                    },
+                  ]}>
+                  <Text style={[styles.cueTimerHelperTitle, { color: theme.text }]}>
+                    Need a little help beginning?
                   </Text>
-                  <Text style={[styles.cueTimerSupport, { color: theme.textSecondary }]}>
-                    Start the timer for the time you chose. You are still allowed to stop when it
-                    ends.
+                  <Text style={[styles.cueTimerHelperBody, { color: theme.textSecondary }]}>
+                    Use a short timer, or start without one.
                   </Text>
-                  <View style={styles.compactBtn}>
-                    <GradientButton
-                      label={`Start a ${cueDuration}-minute timer`}
-                      onPress={startCueTimer}
-                      variant="secondary"
-                      small
+                  <View style={styles.cueTimerControlsRow}>
+                    <DurationChip
+                      label={`${cueDuration} min`}
+                      selected={!isCueTimerCustom}
+                      onPress={() => setIsCueTimerCustom(false)}
                     />
+                    <DurationChip
+                      label="Custom"
+                      selected={isCueTimerCustom}
+                      onPress={() => setIsCueTimerCustom(true)}
+                    />
+                    <View style={[styles.cueStartTimerBtn, !canStartCueTimer && styles.continueDisabled]}>
+                      <GradientButton
+                        label="Start timer"
+                        onPress={() => {
+                          if (!canStartCueTimer) return;
+                          startCueTimer();
+                        }}
+                        variant="secondary"
+                        small
+                      />
+                    </View>
                   </View>
+                  {isCueTimerCustom ? (
+                    <View style={styles.cueTimerCustomField}>
+                      <TextInput
+                        value={cueTimerCustomInput}
+                        onChangeText={(v) => setCueTimerCustomInput(sanitizeCustomMinutesInput(v))}
+                        placeholder="e.g. 7"
+                        placeholderTextColor={theme.textMuted}
+                        keyboardType="number-pad"
+                        accessibilityLabel="Custom timer minutes"
+                        returnKeyType="done"
+                        onSubmitEditing={() => {
+                          if (canStartCueTimer) startCueTimer();
+                        }}
+                        style={[
+                          styles.taskInput,
+                          styles.customDurationInput,
+                          {
+                            color: theme.text,
+                            backgroundColor: theme.background,
+                            borderColor: cueTimerCustomError ? theme.accent : theme.surfaceBorder,
+                          },
+                        ]}
+                      />
+                      {cueTimerCustomError ? (
+                        <Text style={[styles.validationText, { color: theme.accent }]}>
+                          {cueTimerCustomError}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
 
-                <View style={styles.successActions}>
-                  <View style={styles.successBtn}>
-                    <GradientButton
-                      label={`I started with this cue +${NO_BEGINNING_XP} XP`}
-                      onPress={saveCueWin}
-                      small
-                    />
-                  </View>
+                <View style={[styles.cuePrimaryAction, { marginBottom: cueReadySmallGap }]}>
                   <GradientButton
-                    label="Edit my cue"
-                    onPress={() => setNoBeginningStage('cue-setup')}
-                    variant="secondary"
+                    label={`I started with this cue +${NO_BEGINNING_XP} XP`}
+                    onPress={saveCueWin}
                     small
-                    style={styles.successBtn}
                   />
-                  <Pressable
-                    onPress={returnToActivationMenu}
-                    accessibilityRole="button"
-                    accessibilityLabel="Try another way to start"
-                    style={({ pressed }) => [styles.quietAction, pressed && styles.pressed]}>
-                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
-                      Try another way to start
-                    </Text>
-                  </Pressable>
                 </View>
+
+                <Pressable
+                  onPress={returnToActivationMenu}
+                  accessibilityRole="button"
+                  accessibilityLabel="Try another way to start"
+                  style={({ pressed }) => [styles.quietAction, pressed && styles.pressed]}>
+                  <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                    Try another way to start
+                  </Text>
+                </Pressable>
               </View>
             </View>
           ) : null}
@@ -2002,72 +2277,95 @@ export default function CantStartScreen() {
             <View style={styles.stageShell}>
               <View style={[styles.stageInner, styles.formInner]}>
                 <InternalBack label="Back to start tools" onPress={returnToActivationMenu} />
-                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>CLEAR ONE BLOCKER</Text>
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>CLEAR THE WAY</Text>
                 <Text style={[styles.stageTitle, { color: theme.text }]}>
                   What is making the start harder?
                 </Text>
                 <Text style={[styles.stageSupport, { color: theme.textSecondary, marginBottom: nbFieldGap }]}>
-                  You do not have to fix the whole environment. Remove one small obstacle.
+                  Clear one blocker or a few. Every small obstacle you remove makes starting
+                  easier.
                 </Text>
 
                 <View style={styles.blockerList}>
-                  {allBlockers.map((blocker) => (
-                    <BlockerCheckRow
-                      key={blocker}
-                      label={blocker}
-                      checked={checkedBlocker === blocker}
-                      onPress={() => toggleBlockerCheck(blocker)}
+                  {blockerItems.map((item) => (
+                    <BlockerChecklistRow
+                      key={item.id}
+                      item={item}
+                      isEditing={blockerEditingId === item.id}
+                      editingText={blockerEditingText}
+                      onEditingTextChange={setBlockerEditingText}
+                      onToggleComplete={() => toggleBlockerComplete(item.id)}
+                      onStartEdit={() => startBlockerEdit(item.id)}
+                      onSaveEdit={() => saveBlockerEdit(item.id)}
+                      onCancelEdit={() => cancelBlockerEdit(item.id)}
+                      onDelete={() => deleteBlockerItem(item.id)}
+                      stepXp={NO_BEGINNING_XP}
                     />
                   ))}
-                  <Pressable
-                    onPress={() => setShowCustomBlocker(true)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Write my own blocker"
-                    style={({ pressed }) => [styles.customBlockerBtn, pressed && styles.pressed]}>
-                    <Text style={[styles.addStepText, { color: theme.accentSecondary }]}>
-                      + Write my own blocker
-                    </Text>
-                  </Pressable>
-                  {showCustomBlocker ? (
-                    <TextInput
-                      value={customBlockerText}
-                      onChangeText={setCustomBlockerText}
-                      placeholder="Describe one small blocker..."
-                      placeholderTextColor={theme.textMuted}
-                      accessibilityLabel="Custom blocker"
-                      returnKeyType="done"
-                      onSubmitEditing={submitCustomBlocker}
-                      autoFocus
-                      style={[
-                        styles.taskInput,
-                        {
-                          color: theme.text,
-                          backgroundColor: theme.surface,
-                          borderColor: theme.surfaceBorder,
-                        },
-                      ]}
-                    />
-                  ) : null}
+                  {!showCustomBlocker ? (
+                    <Pressable
+                      onPress={() => setShowCustomBlocker(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Write my own blocker"
+                      style={({ pressed }) => [styles.customBlockerBtn, pressed && styles.pressed]}>
+                      <Text style={[styles.addStepText, { color: theme.accentSecondary }]}>
+                        + Write my own blocker
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.customBlockerInputRow}>
+                      <TextInput
+                        value={customBlockerText}
+                        onChangeText={setCustomBlockerText}
+                        placeholder="Describe one small blocker..."
+                        placeholderTextColor={theme.textMuted}
+                        accessibilityLabel="Custom blocker"
+                        returnKeyType="done"
+                        onSubmitEditing={submitCustomBlocker}
+                        autoFocus
+                        style={[
+                          styles.taskInput,
+                          styles.customBlockerInput,
+                          {
+                            color: theme.text,
+                            backgroundColor: theme.surface,
+                            borderColor: theme.surfaceBorder,
+                          },
+                        ]}
+                      />
+                      <View style={styles.customBlockerInputActions}>
+                        <Pressable
+                          onPress={submitCustomBlocker}
+                          accessibilityRole="button"
+                          accessibilityLabel="Add blocker"
+                          style={[styles.editSaveBtn, { backgroundColor: theme.accentSecondary + '44' }]}>
+                          <Text style={[styles.editSaveText, { color: theme.text }]}>Add</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setShowCustomBlocker(false);
+                            setCustomBlockerText('');
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel custom blocker"
+                          hitSlop={8}
+                          style={styles.editCancelBtn}>
+                          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
                 </View>
 
-                {checkedBlocker ? (
+                {blockerCompletedCount > 0 ? (
                   <View style={[styles.actionStack, { marginTop: nbFieldGap }]}>
                     <View style={styles.compactBtn}>
                       <GradientButton
-                        label={`Save this as a tiny win +${NO_BEGINNING_XP} XP`}
-                        onPress={saveBlockerWin}
+                        label="That's enough for now"
+                        onPress={finishBlockerSession}
                         small
                       />
                     </View>
-                    <Pressable
-                      onPress={() => setCheckedBlocker(null)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Choose a different blocker"
-                      style={({ pressed }) => [styles.quietAction, pressed && styles.pressed]}>
-                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
-                        Choose a different blocker
-                      </Text>
-                    </Pressable>
                   </View>
                 ) : null}
               </View>
@@ -2104,12 +2402,26 @@ export default function CantStartScreen() {
                     {noBeginningCompleteCopy?.support ?? NO_BEGINNING_SUPPORT[0]}
                   </Text>
                   <View style={styles.sessionStats}>
-                    <Text style={[styles.sessionStat, { color: theme.text }]}>
-                      Method completed: {completedMethod ? METHOD_LABELS[completedMethod] : ''}
-                    </Text>
-                    <Text style={[styles.sessionStat, { color: theme.text }]}>
-                      +{noBeginningXpEarned} XP earned
-                    </Text>
+                    {completedMethod === 'blocker' ? (
+                      <>
+                        <Text style={[styles.sessionStat, { color: theme.text }]}>
+                          {blockerCompletedCount} blocker{blockerCompletedCount === 1 ? '' : 's'}{' '}
+                          cleared
+                        </Text>
+                        <Text style={[styles.sessionStat, { color: theme.text }]}>
+                          +{noBeginningXpEarned} XP earned
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[styles.sessionStat, { color: theme.text }]}>
+                          Method completed: {completedMethod ? METHOD_LABELS[completedMethod] : ''}
+                        </Text>
+                        <Text style={[styles.sessionStat, { color: theme.text }]}>
+                          +{noBeginningXpEarned} XP earned
+                        </Text>
+                      </>
+                    )}
                     <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
                       Your garden grows from tiny starts too.
                     </Text>
@@ -2777,24 +3089,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     lineHeight: 18,
   },
-  cueTimerSection: {
-    width: '100%',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-  },
-  cueTimerTitle: {
-    ...typography.body,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  cueTimerSupport: {
-    ...typography.bodySmall,
-    textAlign: 'center',
-    maxWidth: 420,
-    lineHeight: 20,
-    marginBottom: spacing.sm,
-  },
   exampleRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2815,35 +3109,66 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 28,
   },
+  cueReadyInner: {
+    maxWidth: 820,
+    alignSelf: 'center',
+  },
+  cueStatementCard: {
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    width: '100%',
+  },
+  cueStatementText: {
+    ...typography.h2,
+    textAlign: 'center',
+    lineHeight: 32,
+  },
+  cueSupportText: {
+    ...typography.body,
+    textAlign: 'center',
+    maxWidth: 480,
+    alignSelf: 'center',
+    lineHeight: 24,
+  },
+  cueTimerHelperPanel: {
+    width: '100%',
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  cueTimerHelperTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+  },
+  cueTimerHelperBody: {
+    ...typography.caption,
+    lineHeight: 18,
+    marginBottom: spacing.xs,
+  },
+  cueTimerControlsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  cueStartTimerBtn: {
+    maxWidth: 200,
+    minWidth: 140,
+  },
+  cueTimerCustomField: {
+    marginTop: spacing.xs,
+    gap: spacing.xs,
+  },
+  cuePrimaryAction: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    alignItems: 'center',
+  },
   blockerList: {
     gap: spacing.sm,
     width: '100%',
-  },
-  blockerCheckPressable: {
-    width: '100%',
-  },
-  blockerCheckRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    minHeight: 52,
-  },
-  blockerCheckbox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  blockerCheckText: {
-    ...typography.body,
-    flex: 1,
-    lineHeight: 22,
   },
   customBlockerBtn: {
     alignSelf: 'flex-start',
@@ -2851,5 +3176,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
     justifyContent: 'center',
+  },
+  customBlockerInputRow: {
+    gap: spacing.sm,
+    width: '100%',
+  },
+  customBlockerInput: {
+    width: '100%',
+  },
+  customBlockerInputActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
 });
