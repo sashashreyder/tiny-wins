@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Platform,
   Pressable,
   ScrollView,
@@ -21,6 +22,18 @@ import { TagPill } from '@/components/design-system/Tags';
 import { GentleTimer } from '@/components/tools/GentleTimer';
 import { stuckTypes } from '@/data/content';
 import { TaskContext, taskFlowTemplates } from '@/data/cantStartFlows';
+import {
+  PressureRuleState,
+  VERSION_ZERO_MODES,
+  VersionZeroMode,
+  VersionZeroStage,
+  buildVersionZeroWinTitle,
+  getVersionZeroModeLabel,
+  getVersionZeroPrompt,
+  getVersionZeroTaskKindLabel,
+  inferVersionZeroTaskKind,
+  pickVersionZeroReminder,
+} from '@/data/versionZero';
 import { calculateXP, getSupportiveMessage, getTinyQuests } from '@/lib/recommendations';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { radii, spacing, typography } from '@/lib/theme';
@@ -37,6 +50,10 @@ const TASK_TEXT_MAX = 100;
 const CHECKLIST_MAX = 6;
 const STEP_XP = calculateXP('tiny-win');
 const NO_BEGINNING_XP = calculateXP('tiny-win');
+const VERSION_ZERO_XP = calculateXP('tiny-win');
+const VERSION_ZERO_MENU_MAX_WIDTH = 960;
+const VERSION_ZERO_ACTIVE_MAX_WIDTH = 880;
+const VERSION_ZERO_COMPLETE_MAX_WIDTH = 790;
 const TIMER_PRESETS = [2, 5, 10] as const;
 const CUE_DURATION_PRESETS = [2, 5, 10] as const;
 
@@ -118,6 +135,11 @@ const COMPLETION_SUPPORT_LINES = [
 function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
+
+type PressableFocusState = {
+  pressed: boolean;
+  focused?: boolean;
+};
 
 type TooBigStage = 'context' | 'checklist-active' | 'session-complete';
 
@@ -489,7 +511,11 @@ function ActivationMethodCard({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={title}
-      style={({ pressed }) => [styles.methodCardPressable, pressed && styles.pressed]}>
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.methodCardPressable,
+        pressed && styles.pressed,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
       <View
         style={[
           styles.methodCard,
@@ -533,6 +559,175 @@ function ActivationMethodsGrid({
             : null}
         </View>
       ))}
+    </View>
+  );
+}
+
+function PressureRuleCard({
+  ruleState,
+  onCrumple,
+  onThrowAway,
+}: {
+  ruleState: PressureRuleState;
+  onCrumple: () => void;
+  onThrowAway: () => void;
+}) {
+  const theme = useAppTheme();
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (ruleState === 'paper') {
+      scaleAnim.setValue(1);
+      rotateAnim.setValue(0);
+      opacityAnim.setValue(1);
+    }
+  }, [ruleState, scaleAnim, rotateAnim, opacityAnim]);
+
+  useEffect(() => {
+    if (ruleState === 'crumpled') {
+      Animated.parallel([
+        Animated.timing(scaleAnim, { toValue: 0.82, duration: 220, useNativeDriver: true }),
+        Animated.timing(rotateAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0.92, duration: 220, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [ruleState, scaleAnim, rotateAnim, opacityAnim]);
+
+  useEffect(() => {
+    if (ruleState === 'trashed') {
+      Animated.parallel([
+        Animated.timing(scaleAnim, { toValue: 0.6, duration: 180, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0.5, duration: 180, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [ruleState, scaleAnim, opacityAnim]);
+
+  const rotation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '-8deg'],
+  });
+
+  return (
+    <View
+      style={[
+        styles.pressureRuleCard,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.surfaceBorder,
+        },
+      ]}>
+      <Text style={[styles.pressureRuleTitle, { color: theme.textSecondary }]}>
+        One rule we can throw away
+      </Text>
+
+      {ruleState === 'paper' ? (
+        <>
+          <View
+            style={[
+              styles.pressurePaper,
+              {
+                backgroundColor: theme.background,
+                borderColor: theme.surfaceBorder,
+              },
+            ]}>
+            <Text style={[styles.pressurePaperText, { color: theme.text }]}>
+              It has to be good on the first try.
+            </Text>
+          </View>
+          <Pressable
+            onPress={onCrumple}
+            accessibilityRole="button"
+            accessibilityLabel="Crumple this rule"
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.pressureActionBtn,
+              pressed && styles.pressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.pressureActionText, { color: theme.accentSecondary }]}>
+              Crumple this rule
+            </Text>
+          </Pressable>
+        </>
+      ) : null}
+
+      {ruleState === 'crumpled' ? (
+        <>
+          <Animated.View
+            style={{
+              transform: [{ scale: scaleAnim }, { rotate: rotation }],
+              opacity: opacityAnim,
+            }}>
+            <Text style={styles.pressureEmoji} accessibilityLabel="Crumpled paper">
+              🗞️
+            </Text>
+          </Animated.View>
+          <Text style={[styles.pressureStatusText, { color: theme.text }]}>
+            Crushed. That rule was not helping.
+          </Text>
+          <Pressable
+            onPress={onThrowAway}
+            accessibilityRole="button"
+            accessibilityLabel="Throw it away"
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.pressureActionBtn,
+              pressed && styles.pressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.pressureActionText, { color: theme.accentSecondary }]}>
+              Throw it away
+            </Text>
+          </Pressable>
+        </>
+      ) : null}
+
+      {ruleState === 'trashed' ? (
+        <>
+          <Text style={styles.pressureEmoji} accessibilityLabel="Trash">
+            🗑️
+          </Text>
+          <Text style={[styles.pressureStatusText, { color: theme.text }]}>
+            Gone. Version Zero only has to exist.
+          </Text>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function VersionZeroReminderCard({
+  reminder,
+  onAnother,
+}: {
+  reminder: string;
+  onAnother: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <View
+      style={[
+        styles.vzReminderCard,
+        {
+          backgroundColor: theme.accentTertiary,
+          borderColor: theme.accent,
+        },
+      ]}>
+      <Text style={[styles.vzReminderText, { color: theme.text }]}>{reminder}</Text>
+      <Pressable
+        onPress={onAnother}
+        accessibilityRole="button"
+        accessibilityLabel="Another reminder"
+        style={({ pressed, focused }: PressableFocusState) => [
+          styles.vzReminderBtn,
+          pressed && styles.pressed,
+          focused && Platform.OS === 'web' ? styles.focusRing : null,
+        ]}>
+        <Text style={[styles.vzReminderBtnText, { color: theme.accentSecondary }]}>
+          Another reminder ↻
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -1022,10 +1217,23 @@ export default function CantStartScreen() {
   } | null>(null);
   const [nbInputFocused, setNbInputFocused] = useState(false);
 
+  const [versionZeroStage, setVersionZeroStage] = useState<VersionZeroStage>('menu');
+  const [versionZeroTaskText, setVersionZeroTaskText] = useState('');
+  const [versionZeroMode, setVersionZeroMode] = useState<VersionZeroMode | null>(null);
+  const [versionZeroReminder, setVersionZeroReminder] = useState('');
+  const [versionZeroRewarded, setVersionZeroRewarded] = useState(false);
+  const [versionZeroXpEarned, setVersionZeroXpEarned] = useState(0);
+  const [pressureRuleState, setPressureRuleState] = useState<PressureRuleState>('paper');
+  const [vzInputFocused, setVzInputFocused] = useState(false);
+  const [versionZeroEditingTask, setVersionZeroEditingTask] = useState(false);
+  const versionZeroRewardingRef = useRef(false);
+
   const isTooBigFlow = stuckType === 'too-big';
   const isNoBeginningFlow = stuckType === 'no-beginning';
+  const isVersionZeroFlow = stuckType === 'scared-bad';
   const showContextStage = isTooBigFlow && tooBigStage === 'context';
-  const showLegacyQuestStage = Boolean(stuckType) && !isTooBigFlow && !isNoBeginningFlow;
+  const showLegacyQuestStage =
+    Boolean(stuckType) && !isTooBigFlow && !isNoBeginningFlow && !isVersionZeroFlow;
   const suggestedContextOption = taskContextOptions.find((o) => o.id === suggestedContext);
 
   const flowTemplate = confirmedContext ? taskFlowTemplates[confirmedContext] : null;
@@ -1066,8 +1274,18 @@ export default function CantStartScreen() {
     fontWeight: '400' as const,
   };
 
+  const vzSectionGap = isDesktopLayout ? 32 : 22;
+  const versionZeroTaskKind = useMemo(
+    () => inferVersionZeroTaskKind(versionZeroTaskText),
+    [versionZeroTaskText],
+  );
+  const versionZeroPrompt =
+    versionZeroMode !== null
+      ? getVersionZeroPrompt(versionZeroTaskKind, versionZeroMode)
+      : '';
+
   const quests = useMemo(() => {
-    if (!stuckType || stuckType === 'too-big') return [];
+    if (!stuckType || stuckType === 'too-big' || stuckType === 'scared-bad') return [];
     return getTinyQuests(stuckType, profile?.energyLevel);
   }, [stuckType, profile?.energyLevel]);
 
@@ -1152,6 +1370,49 @@ export default function CantStartScreen() {
     setNoBeginningCompleteCopy(null);
   };
 
+  const resetVersionZeroState = () => {
+    setVersionZeroStage('menu');
+    setVersionZeroTaskText('');
+    setVersionZeroMode(null);
+    setVersionZeroReminder('');
+    setVersionZeroRewarded(false);
+    setVersionZeroXpEarned(0);
+    setPressureRuleState('paper');
+    setVersionZeroEditingTask(false);
+    versionZeroRewardingRef.current = false;
+  };
+
+  const selectVersionZeroMode = (mode: VersionZeroMode) => {
+    setVersionZeroMode(mode);
+    setVersionZeroReminder(pickVersionZeroReminder());
+    setPressureRuleState('paper');
+    setVersionZeroEditingTask(false);
+    setVersionZeroStage('active');
+  };
+
+  const returnToVersionZeroMenu = () => {
+    setVersionZeroStage('menu');
+    setVersionZeroMode(null);
+    setPressureRuleState('paper');
+    setVersionZeroEditingTask(false);
+  };
+
+  const awardVersionZeroWin = () => {
+    if (versionZeroRewarded || versionZeroRewardingRef.current) return;
+    versionZeroRewardingRef.current = true;
+    const title = buildVersionZeroWinTitle(versionZeroTaskText, versionZeroTaskKind);
+    const category = inferTinyWinCategory(versionZeroTaskText, 'creative');
+    addTinyWin(title.slice(0, 80), category, false);
+    markAchievementEvent('cant-start-quest');
+    setVersionZeroRewarded(true);
+    setVersionZeroXpEarned(VERSION_ZERO_XP);
+    setVersionZeroStage('complete');
+  };
+
+  const cycleVersionZeroReminder = () => {
+    setVersionZeroReminder((current) => pickVersionZeroReminder(current));
+  };
+
   const goToNoBeginningComplete = (method: NoBeginningMethod) => {
     setCompletedMethod(method);
     setNoBeginningCompleteCopy({
@@ -1175,8 +1436,16 @@ export default function CantStartScreen() {
     setSmallerMode(false);
     if (type === 'too-big') {
       resetTooBigLocalState();
-    } else if (type === 'no-beginning') {
       resetNoBeginningState();
+      resetVersionZeroState();
+    } else if (type === 'no-beginning') {
+      resetTooBigLocalState();
+      resetVersionZeroState();
+      resetNoBeginningState();
+    } else if (type === 'scared-bad') {
+      resetTooBigLocalState();
+      resetNoBeginningState();
+      resetVersionZeroState();
     } else {
       setTooBigStage('context');
       setManualContext(null);
@@ -1186,6 +1455,7 @@ export default function CantStartScreen() {
       setTaskText('');
       resetSessionProgress();
       resetNoBeginningState();
+      resetVersionZeroState();
     }
   };
 
@@ -1193,6 +1463,7 @@ export default function CantStartScreen() {
     setStuckType(null);
     resetTooBigLocalState();
     resetNoBeginningState();
+    resetVersionZeroState();
   };
 
   const returnToActivationMenu = () => {
@@ -2467,6 +2738,305 @@ export default function CantStartScreen() {
             </View>
           ) : null}
 
+          {isVersionZeroFlow && versionZeroStage === 'menu' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.vzMenuInner]}>
+                <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>
+                  I&apos;M SCARED IT WON&apos;T BE GOOD
+                </Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  It doesn&apos;t need to be good yet.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: vzSectionGap },
+                  ]}>
+                  You are not making the final version. You are making something you can return to,
+                  change, and improve.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: vzSectionGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    The first version only has one job: exist.
+                  </Text>
+                </GlassCard>
+
+                <View style={[styles.taskFieldBlock, { marginBottom: vzSectionGap }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What are you making?
+                  </Text>
+                  <TextInput
+                    value={versionZeroTaskText}
+                    onChangeText={(v) => setVersionZeroTaskText(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="e.g. a presentation, message, design, report"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="What are you making?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => {}}
+                    onFocus={() => setVzInputFocused(true)}
+                    onBlur={() => setVzInputFocused(false)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: vzInputFocused ? theme.accent : theme.surfaceBorder,
+                      },
+                      vzInputFocused && styles.taskInputFocused,
+                    ]}
+                  />
+                  <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                    We&apos;ll use this to suggest a safer first version.
+                  </Text>
+                </View>
+
+                <ActivationMethodsGrid columns={methodColumns} gap={methodGap}>
+                  {VERSION_ZERO_MODES.map((mode) => (
+                    <ActivationMethodCard
+                      key={mode.id}
+                      icon={mode.icon}
+                      title={mode.title}
+                      description={mode.description}
+                      onPress={() => selectVersionZeroMode(mode.id)}
+                    />
+                  ))}
+                </ActivationMethodsGrid>
+              </View>
+            </View>
+          ) : null}
+
+          {isVersionZeroFlow && versionZeroStage === 'active' && versionZeroMode ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.vzActiveInner]}>
+                <InternalBack
+                  label="Choose a different Version Zero"
+                  onPress={returnToVersionZeroMenu}
+                />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>VERSION ZERO</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Make something editable.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  This is raw material, not a final result. It can be incomplete, awkward, or wrong.
+                </Text>
+
+                {versionZeroTaskText.trim() ? (
+                  <View style={styles.vzTaskSummaryRow}>
+                    {versionZeroEditingTask ? (
+                      <TextInput
+                        value={versionZeroTaskText}
+                        onChangeText={(v) => setVersionZeroTaskText(v.slice(0, TASK_TEXT_MAX))}
+                        maxLength={TASK_TEXT_MAX}
+                        accessibilityLabel="Edit what you are making"
+                        autoFocus
+                        onBlur={() => setVersionZeroEditingTask(false)}
+                        style={[
+                          styles.vzTaskEditInput,
+                          {
+                            color: theme.text,
+                            backgroundColor: theme.surface,
+                            borderColor: theme.surfaceBorder,
+                          },
+                        ]}
+                      />
+                    ) : (
+                      <>
+                        <Text style={[styles.vzTaskSummary, { color: theme.textSecondary }]}>
+                          You&apos;re making:{' '}
+                          <Text style={{ color: theme.text, fontWeight: '600' }}>
+                            {versionZeroTaskKind !== 'general'
+                              ? getVersionZeroTaskKindLabel(versionZeroTaskKind)
+                              : versionZeroTaskText.trim().charAt(0).toUpperCase() +
+                                versionZeroTaskText.trim().slice(1)}
+                          </Text>
+                        </Text>
+                        <Pressable
+                          onPress={() => setVersionZeroEditingTask(true)}
+                          accessibilityRole="button"
+                          accessibilityLabel="Edit task"
+                          style={({ pressed, focused }: PressableFocusState) => [
+                            styles.vzEditBtn,
+                            pressed && styles.pressed,
+                            focused && Platform.OS === 'web' ? styles.focusRing : null,
+                          ]}>
+                          <Text style={[styles.vzEditBtnText, { color: theme.textMuted }]}>
+                            Edit
+                          </Text>
+                        </Pressable>
+                      </>
+                    )}
+                  </View>
+                ) : null}
+
+                <GlassCard
+                  style={[
+                    styles.vzInstructionCard,
+                    {
+                      borderColor: theme.accent,
+                      marginBottom: spacing.lg,
+                    },
+                  ]}>
+                  <Text style={[styles.vzModeLabel, { color: theme.textMuted }]}>
+                    {getVersionZeroModeLabel(versionZeroMode)}
+                  </Text>
+                  <Text style={[styles.vzInstructionText, { color: theme.text }]}>
+                    {versionZeroPrompt}
+                  </Text>
+                  <Text style={[styles.vzInstructionSupport, { color: theme.textSecondary }]}>
+                    Stop as soon as this version exists.
+                  </Text>
+                </GlassCard>
+
+                {versionZeroReminder ? (
+                  <VersionZeroReminderCard
+                    reminder={versionZeroReminder}
+                    onAnother={cycleVersionZeroReminder}
+                  />
+                ) : null}
+
+                <PressureRuleCard
+                  ruleState={pressureRuleState}
+                  onCrumple={() => setPressureRuleState('crumpled')}
+                  onThrowAway={() => setPressureRuleState('trashed')}
+                />
+
+                <View style={styles.actionStack}>
+                  {versionZeroRewarded ? (
+                    <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                      <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                        Version Zero saved ✓
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.compactBtn}>
+                      <GradientButton
+                        label={`I made Version Zero +${VERSION_ZERO_XP} XP`}
+                        onPress={awardVersionZeroWin}
+                        small
+                      />
+                    </View>
+                  )}
+                  <Pressable
+                    onPress={returnToVersionZeroMenu}
+                    accessibilityRole="button"
+                    accessibilityLabel="This version doesn't fit"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.quietAction,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      This version doesn&apos;t fit
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Text style={[styles.vzSafetyCopy, { color: theme.textMuted }]}>
+                  You are allowed to stop after Version Zero.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {isVersionZeroFlow && versionZeroStage === 'complete' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.vzCompleteInner]}>
+                <InternalBack
+                  label="Back to Version Zero"
+                  onPress={() => setVersionZeroStage('active')}
+                />
+                <GlassCard style={styles.successCard}>
+                  <Text style={styles.vzCompleteBadge} accessibilityLabel="Celebration">
+                    ✨
+                  </Text>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>
+                    You made something editable!
+                  </Text>
+                  <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                    The blank page is gone. You do not have to improve it right now.
+                  </Text>
+                  <View style={styles.sessionStats}>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      1 Version Zero created
+                    </Text>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      +{versionZeroXpEarned} XP earned
+                    </Text>
+                    <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
+                      Your garden grows from imperfect starts too.
+                    </Text>
+                  </View>
+                  <View style={styles.successActions}>
+                    <View style={styles.successBtn}>
+                      <GradientButton
+                        label="Back to dashboard"
+                        onPress={() => router.push('/dashboard' as never)}
+                        small
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.successLinks}>
+                    <Pressable
+                      onPress={() => setVersionZeroStage('active')}
+                      accessibilityRole="button"
+                      accessibilityLabel="Keep working on Version Zero"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Keep working on Version Zero
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push('/garden' as never)}
+                      accessibilityRole="link"
+                      accessibilityLabel="Check out your garden"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.accentSecondary }]}>
+                        Check out your garden
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={returnToStuckTypes}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose another stuck type"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Choose another stuck type
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
           {showLegacyQuestStage ? (
             <>
               <Text style={[styles.headline, { color: theme.text }]}>Starting is a task too.</Text>
@@ -3188,5 +3758,182 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  focusRing: {
+    ...(Platform.OS === 'web'
+      ? ({
+          outlineStyle: 'solid',
+          outlineWidth: 2,
+          outlineColor: 'rgba(255, 138, 122, 0.55)',
+          outlineOffset: 2,
+        } as object)
+      : null),
+  },
+  vzMenuInner: {
+    maxWidth: VERSION_ZERO_MENU_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  vzActiveInner: {
+    maxWidth: VERSION_ZERO_ACTIVE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  vzCompleteInner: {
+    maxWidth: VERSION_ZERO_COMPLETE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  vzStatementCard: {
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    width: '100%',
+  },
+  vzStatementText: {
+    ...typography.h2,
+    textAlign: 'center',
+    lineHeight: 32,
+    fontWeight: '700',
+  },
+  vzFieldHelper: {
+    ...typography.caption,
+    lineHeight: 18,
+  },
+  vzTaskSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  vzTaskSummary: {
+    ...typography.bodySmall,
+    flex: 1,
+    minWidth: 0,
+  },
+  vzEditBtn: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  vzEditBtnText: {
+    ...typography.caption,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  vzTaskEditInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: Platform.OS === 'web' ? 8 : spacing.xs,
+    ...typography.bodySmall,
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null),
+  },
+  vzInstructionCard: {
+    padding: spacing.lg,
+    gap: spacing.sm,
+    width: '100%',
+    borderWidth: 1.5,
+  },
+  vzModeLabel: {
+    ...typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  vzInstructionText: {
+    ...typography.h3,
+    lineHeight: 28,
+    fontWeight: '700',
+  },
+  vzInstructionSupport: {
+    ...typography.bodySmall,
+    lineHeight: 20,
+    marginTop: spacing.xs,
+  },
+  vzReminderCard: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+    width: '100%',
+  },
+  vzReminderText: {
+    ...typography.body,
+    lineHeight: 24,
+    fontStyle: 'italic',
+  },
+  vzReminderBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  vzReminderBtnText: {
+    ...typography.caption,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  pressureRuleCard: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+    width: '100%',
+    alignItems: 'center',
+  },
+  pressureRuleTitle: {
+    ...typography.caption,
+    fontWeight: '700',
+    alignSelf: 'flex-start',
+  },
+  pressurePaper: {
+    width: '100%',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    borderStyle: 'dashed',
+  },
+  pressurePaperText: {
+    ...typography.bodySmall,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  pressureEmoji: {
+    fontSize: 36,
+    lineHeight: 42,
+    textAlign: 'center',
+  },
+  pressureStatusText: {
+    ...typography.bodySmall,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  pressureActionBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  pressureActionText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  vzCompletedBtn: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  vzCompletedText: {
+    ...typography.body,
+    fontWeight: '600',
+  },
+  vzSafetyCopy: {
+    ...typography.caption,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+    lineHeight: 18,
+  },
+  vzCompleteBadge: {
+    fontSize: 36,
+    lineHeight: 42,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
   },
 });

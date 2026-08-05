@@ -68,7 +68,7 @@ export const stuckTypes: StuckTypeOption[] = [
     id: 'scared-bad',
     label: "I'm scared it won't be good",
     emoji: '😬',
-    hint: 'Perfection pressure is blocking you.',
+    hint: 'The first try feels like it has to prove everything.',
   },
   {
     id: 'bored',
