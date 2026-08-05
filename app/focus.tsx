@@ -97,6 +97,7 @@ export default function FocusScreen() {
               title={title || 'Focus'}
               goal={smallest || 'Show up'}
               endLabel="End sprint"
+              pauseLabel="Pause without shame"
               onFinish={handleTimerFinish}>
               <View style={styles.actionRow}>
                 <GradientButton

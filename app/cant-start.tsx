@@ -115,6 +115,8 @@ type TooBigStage = 'context' | 'checklist-active' | 'session-complete';
 
 type NoBeginningMethod = 'timer' | 'cue' | 'blocker';
 
+type TimerOrigin = 'timer-tool' | 'start-cue';
+
 type NoBeginningStage =
   | 'menu'
   | 'timer-setup'
@@ -123,7 +125,6 @@ type NoBeginningStage =
   | 'cue-setup'
   | 'cue-ready'
   | 'blocker-choice'
-  | 'blocker-active'
   | 'complete';
 
 const METHOD_LABELS: Record<NoBeginningMethod, string> = {
@@ -309,6 +310,28 @@ function buildBlockerWinTitle(taskText: string, blocker: string): string {
   return `Cleared blocker: ${blocker.slice(0, 40)}`;
 }
 
+function sanitizeCustomMinutesInput(value: string): string {
+  return value.replace(/\D/g, '').slice(0, 2);
+}
+
+function parseCustomMinutes(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const minutes = parseInt(trimmed, 10);
+  if (minutes < 1 || minutes > 60) return null;
+  return minutes;
+}
+
+function customDurationError(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return 'Enter a number of minutes.';
+  if (!/^\d+$/.test(trimmed)) return 'Use whole minutes only.';
+  const minutes = parseInt(trimmed, 10);
+  if (minutes < 1) return 'Minimum is 1 minute.';
+  if (minutes > 60) return 'Maximum is 60 minutes.';
+  return null;
+}
+
 function suggestTaskContext(text: string): TaskContext | null {
   const normalized = text.toLowerCase().trim();
   if (!normalized) return null;
@@ -487,24 +510,93 @@ function ActivationMethodsGrid({
   );
 }
 
-function BlockerOptionCard({ label, onPress }: { label: string; onPress: () => void }) {
+function DurationChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
   const theme = useAppTheme();
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      accessibilityState={{ selected }}
       accessibilityLabel={label}
-      style={({ pressed }) => [styles.blockerCardPressable, pressed && styles.pressed]}>
+      style={({ pressed }) => [pressed && styles.pressed]}>
       <View
         style={[
-          styles.blockerCard,
+          styles.durationChip,
           {
-            backgroundColor: theme.surface,
-            borderColor: theme.surfaceBorder,
+            backgroundColor: selected ? theme.accentTertiary : theme.surface,
+            borderColor: selected ? theme.accent : theme.surfaceBorder,
           },
         ]}>
-        <Text style={[styles.blockerLabel, { color: theme.text }]}>{label}</Text>
+        <Text
+          style={[
+            styles.durationChipText,
+            { color: selected ? theme.text : theme.textSecondary },
+          ]}>
+          {label}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function BlockerCheckRow({
+  label,
+  checked,
+  onPress,
+}: {
+  label: string;
+  checked: boolean;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.blockerCheckPressable, pressed && styles.pressed]}>
+      <View
+        style={[
+          styles.blockerCheckRow,
+          {
+            backgroundColor: theme.surface,
+            borderColor: checked ? theme.accentSecondary : theme.surfaceBorder,
+            opacity: checked ? 0.78 : 1,
+          },
+        ]}>
+        <View
+          style={[
+            styles.blockerCheckbox,
+            checked
+              ? {
+                  borderColor: theme.accentSecondary,
+                  backgroundColor: theme.accentSecondary + '55',
+                }
+              : { borderColor: theme.surfaceBorder, backgroundColor: 'transparent' },
+          ]}>
+          {checked ? <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text> : null}
+        </View>
+        <Text
+          style={[
+            styles.blockerCheckText,
+            {
+              color: theme.text,
+              textDecorationLine: checked ? 'line-through' : 'none',
+            },
+          ]}>
+          {label}
+        </Text>
       </View>
     </Pressable>
   );
@@ -783,10 +875,14 @@ export default function CantStartScreen() {
   const [noBeginningTaskText, setNoBeginningTaskText] = useState('');
   const [timerDuration, setTimerDuration] = useState(5);
   const [timerRunKey, setTimerRunKey] = useState(0);
+  const [timerOrigin, setTimerOrigin] = useState<TimerOrigin>('timer-tool');
+  const [isCustomDuration, setIsCustomDuration] = useState(false);
+  const [customDurationInput, setCustomDurationInput] = useState('');
   const [cueWhen, setCueWhen] = useState('');
   const [cueWill, setCueWill] = useState('');
   const [cueDuration, setCueDuration] = useState(5);
-  const [selectedBlocker, setSelectedBlocker] = useState<string | null>(null);
+  const [customBlockers, setCustomBlockers] = useState<string[]>([]);
+  const [checkedBlocker, setCheckedBlocker] = useState<string | null>(null);
   const [customBlockerText, setCustomBlockerText] = useState('');
   const [showCustomBlocker, setShowCustomBlocker] = useState(false);
   const [completedMethod, setCompletedMethod] = useState<NoBeginningMethod | null>(null);
@@ -815,6 +911,16 @@ export default function CantStartScreen() {
   const isDesktopLayout = viewportWidth >= 768;
   const methodColumns = viewportWidth >= 768 ? 3 : 1;
   const methodGap = viewportWidth >= 768 ? 16 : 12;
+  const nbSectionGap = isDesktopLayout ? 32 : 22;
+  const nbFieldGap = isDesktopLayout ? 26 : 20;
+  const customDurationErrorText = isCustomDuration ? customDurationError(customDurationInput) : null;
+  const resolvedCustomMinutes = parseCustomMinutes(customDurationInput);
+  const canStartTimer = isCustomDuration
+    ? resolvedCustomMinutes !== null
+    : (TIMER_PRESETS as readonly number[]).includes(timerDuration);
+  const allBlockers = [...BLOCKER_PRESETS, ...customBlockers];
+  const timerDisplayTitle =
+    timerOrigin === 'start-cue' ? cueWill.trim() : noBeginningTaskText.trim();
   const checklistTitleStyle = {
     fontSize: isDesktopLayout ? 40 : 32,
     lineHeight: isDesktopLayout ? 46 : 38,
@@ -886,10 +992,14 @@ export default function CantStartScreen() {
     setNoBeginningTaskText('');
     setTimerDuration(5);
     setTimerRunKey(0);
+    setTimerOrigin('timer-tool');
+    setIsCustomDuration(false);
+    setCustomDurationInput('');
     setCueWhen('');
     setCueWill('');
     setCueDuration(5);
-    setSelectedBlocker(null);
+    setCustomBlockers([]);
+    setCheckedBlocker(null);
     setCustomBlockerText('');
     setShowCustomBlocker(false);
     setCompletedMethod(null);
@@ -970,18 +1080,71 @@ export default function CantStartScreen() {
   };
 
   const saveBlockerWin = () => {
-    if (methodRewarded) return;
-    const blocker = selectedBlocker ?? customBlockerText;
-    const title = buildBlockerWinTitle(noBeginningTaskText, blocker);
+    if (methodRewarded || !checkedBlocker) return;
+    const title = buildBlockerWinTitle(noBeginningTaskText, checkedBlocker);
     const category = inferTinyWinCategory(noBeginningTaskText, 'body-reset');
     awardNoBeginningWin(title, category);
     goToNoBeginningComplete('blocker');
   };
 
+  const startTinyTimer = () => {
+    const duration = isCustomDuration ? resolvedCustomMinutes : timerDuration;
+    if (!duration) return;
+    setTimerDuration(duration);
+    setTimerOrigin('timer-tool');
+    setTimerRunKey((k) => k + 1);
+    setNoBeginningStage('timer-running');
+  };
+
+  const startCueTimer = () => {
+    setTimerDuration(cueDuration);
+    setTimerOrigin('start-cue');
+    setTimerRunKey((k) => k + 1);
+    setNoBeginningStage('timer-running');
+  };
+
+  const saveTimerResultWin = () => {
+    if (timerOrigin === 'start-cue') {
+      saveCueWin();
+    } else {
+      saveTimerWin();
+    }
+  };
+
+  const backFromTimerRunning = () => {
+    if (timerOrigin === 'start-cue') {
+      setNoBeginningStage('cue-ready');
+    } else {
+      setNoBeginningStage('timer-setup');
+    }
+  };
+
+  const backFromTimerResult = () => {
+    if (timerOrigin === 'start-cue') {
+      setNoBeginningStage('cue-ready');
+    } else {
+      setNoBeginningStage('timer-setup');
+    }
+  };
+
+  const toggleBlockerCheck = (blocker: string) => {
+    setCheckedBlocker((current) => (current === blocker ? null : blocker));
+  };
+
+  const submitCustomBlocker = () => {
+    const trimmed = customBlockerText.trim();
+    if (!trimmed) return;
+    if (!customBlockers.includes(trimmed) && !BLOCKER_PRESETS.includes(trimmed)) {
+      setCustomBlockers((prev) => [...prev, trimmed]);
+    }
+    setCustomBlockerText('');
+    setShowCustomBlocker(false);
+  };
+
   const backFromComplete = () => {
     if (completedMethod === 'timer') setNoBeginningStage('timer-result');
     else if (completedMethod === 'cue') setNoBeginningStage('cue-ready');
-    else if (completedMethod === 'blocker') setNoBeginningStage('blocker-active');
+    else if (completedMethod === 'blocker') setNoBeginningStage('blocker-choice');
   };
 
   const handleTaskTextChange = (value: string) => {
@@ -1439,12 +1602,12 @@ export default function CantStartScreen() {
                 <Text style={[styles.stageTitle, { color: theme.text }]}>
                   What could help you get moving?
                 </Text>
-                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary, marginBottom: nbSectionGap }]}>
                   You may already know what the task is. Choose one way to make starting easier.
                   You do not have to commit to finishing.
                 </Text>
 
-                <View style={styles.taskFieldBlock}>
+                <View style={[styles.taskFieldBlock, { marginBottom: nbSectionGap }]}>
                   <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
                     What are you trying to begin?
                   </Text>
@@ -1469,6 +1632,7 @@ export default function CantStartScreen() {
                   />
                 </View>
 
+                <View style={{ marginBottom: nbSectionGap }}>
                 <ActivationMethodsGrid columns={methodColumns} gap={methodGap}>
                   {ACTIVATION_METHODS.map((method) => (
                     <ActivationMethodCard
@@ -1489,90 +1653,104 @@ export default function CantStartScreen() {
                     />
                   ))}
                 </ActivationMethodsGrid>
+                </View>
               </View>
             </View>
           ) : null}
 
           {isNoBeginningFlow && noBeginningStage === 'timer-setup' ? (
             <View style={styles.stageShell}>
-              <View style={styles.stageInner}>
+              <View style={[styles.stageInner, styles.formInner]}>
                 <InternalBack label="Back to start tools" onPress={returnToActivationMenu} />
                 <Text style={[styles.eyebrow, { color: theme.textMuted }]}>TINY TIMER</Text>
                 <Text style={[styles.stageTitle, { color: theme.text }]}>Give it a few minutes.</Text>
-                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary, marginBottom: nbFieldGap }]}>
                   You are allowed to stop when the timer ends. Starting is the whole goal.
                 </Text>
 
-                {noBeginningTaskText.trim() ? (
-                  <View style={styles.taskFieldBlock}>
-                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
-                      What will you touch first?
-                    </Text>
-                    <Text style={[styles.taskSummary, { color: theme.textSecondary }]}>
-                      {noBeginningTaskText}
-                    </Text>
-                    <TextInput
-                      value={noBeginningTaskText}
-                      onChangeText={(v) => setNoBeginningTaskText(v.slice(0, TASK_TEXT_MAX))}
-                      placeholder="Open the presentation, wash one dish..."
-                      placeholderTextColor={theme.textMuted}
-                      maxLength={TASK_TEXT_MAX}
-                      accessibilityLabel="Edit what you will touch first"
-                      style={[
-                        styles.taskInput,
-                        {
-                          color: theme.text,
-                          backgroundColor: theme.surface,
-                          borderColor: theme.surfaceBorder,
-                        },
-                      ]}
-                    />
-                  </View>
-                ) : (
-                  <View style={styles.taskFieldBlock}>
-                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
-                      What will you touch first?
-                    </Text>
-                    <TextInput
-                      value={noBeginningTaskText}
-                      onChangeText={(v) => setNoBeginningTaskText(v.slice(0, TASK_TEXT_MAX))}
-                      placeholder="Open the presentation, wash one dish..."
-                      placeholderTextColor={theme.textMuted}
-                      maxLength={TASK_TEXT_MAX}
-                      accessibilityLabel="What will you touch first?"
-                      style={[
-                        styles.taskInput,
-                        {
-                          color: theme.text,
-                          backgroundColor: theme.surface,
-                          borderColor: theme.surfaceBorder,
-                        },
-                      ]}
-                    />
-                  </View>
-                )}
-
-                <Text style={[styles.taskFieldLabel, { color: theme.text, marginTop: spacing.sm }]}>
-                  Duration
-                </Text>
-                <View style={styles.presetRow}>
-                  {TIMER_PRESETS.map((mins) => (
-                    <TagPill
-                      key={mins}
-                      label={`${mins} min`}
-                      selected={timerDuration === mins}
-                      onPress={() => setTimerDuration(mins)}
-                    />
-                  ))}
+                <View style={[styles.taskFieldBlock, { marginBottom: nbFieldGap }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What will you touch first?
+                  </Text>
+                  <TextInput
+                    value={noBeginningTaskText}
+                    onChangeText={(v) => setNoBeginningTaskText(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="Open the presentation, wash one dish..."
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="What will you touch first?"
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: theme.surfaceBorder,
+                      },
+                    ]}
+                  />
                 </View>
 
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  Duration
+                </Text>
+                <View style={styles.durationRow}>
+                  {TIMER_PRESETS.map((mins) => (
+                    <DurationChip
+                      key={mins}
+                      label={`${mins} min`}
+                      selected={!isCustomDuration && timerDuration === mins}
+                      onPress={() => {
+                        setIsCustomDuration(false);
+                        setTimerDuration(mins);
+                      }}
+                    />
+                  ))}
+                  <DurationChip
+                    label="Custom"
+                    selected={isCustomDuration}
+                    onPress={() => setIsCustomDuration(true)}
+                  />
+                </View>
+
+                {isCustomDuration ? (
+                  <View style={[styles.taskFieldBlock, { marginBottom: nbFieldGap }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>Custom minutes</Text>
+                    <TextInput
+                      value={customDurationInput}
+                      onChangeText={(v) => setCustomDurationInput(sanitizeCustomMinutesInput(v))}
+                      placeholder="e.g. 7"
+                      placeholderTextColor={theme.textMuted}
+                      keyboardType="number-pad"
+                      accessibilityLabel="Custom minutes"
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (canStartTimer) startTinyTimer();
+                      }}
+                      style={[
+                        styles.taskInput,
+                        styles.customDurationInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: customDurationErrorText ? theme.accent : theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    {customDurationErrorText ? (
+                      <Text style={[styles.validationText, { color: theme.accent }]}>
+                        {customDurationErrorText}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+
                 <View style={styles.actionStack}>
-                  <View style={styles.compactBtn}>
+                  <View style={[styles.compactBtn, !canStartTimer && styles.continueDisabled]}>
                     <GradientButton
                       label="Start tiny timer"
                       onPress={() => {
-                        setTimerRunKey((k) => k + 1);
-                        setNoBeginningStage('timer-running');
+                        if (!canStartTimer) return;
+                        startTinyTimer();
                       }}
                       small
                     />
@@ -1585,11 +1763,14 @@ export default function CantStartScreen() {
           {isNoBeginningFlow && noBeginningStage === 'timer-running' ? (
             <View style={styles.stageShell}>
               <View style={[styles.stageInner, styles.timerRunningInner]}>
-                <InternalBack label="Back to start tools" onPress={returnToActivationMenu} />
+                <InternalBack
+                  label={timerOrigin === 'start-cue' ? 'Back to my cue' : 'Back to timer setup'}
+                  onPress={backFromTimerRunning}
+                />
                 <GentleTimer
                   key={`nb-timer-${timerRunKey}-${timerDuration}`}
                   durationMinutes={timerDuration}
-                  title={noBeginningTaskText.trim() || undefined}
+                  title={timerDisplayTitle || undefined}
                   compact
                   onFinish={() => setNoBeginningStage('timer-result')}
                 />
@@ -1600,16 +1781,28 @@ export default function CantStartScreen() {
           {isNoBeginningFlow && noBeginningStage === 'timer-result' ? (
             <View style={styles.stageShell}>
               <View style={[styles.stageInner, isSuccessNarrow && styles.successInnerDesktop]}>
+                <InternalBack
+                  label={timerOrigin === 'start-cue' ? 'Back to my cue' : 'Back to timer setup'}
+                  onPress={backFromTimerResult}
+                />
                 <GlassCard style={styles.successCard}>
-                  <Text style={[styles.successTitle, { color: theme.text }]}>You showed up.</Text>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>
+                    {timerOrigin === 'start-cue' ? 'Your cue got you moving.' : 'You showed up.'}
+                  </Text>
                   <Text style={[styles.successBody, { color: theme.textSecondary }]}>
-                    You gave the task some real time. You can stop here or choose what comes next.
+                    {timerOrigin === 'start-cue'
+                      ? 'You gave the task the time you planned. You can save the start or stop here.'
+                      : 'You gave the task some real time. You can stop here or choose what comes next.'}
                   </Text>
                   <View style={styles.successActions}>
                     <View style={styles.successBtn}>
                       <GradientButton
-                        label={`Save this as a tiny win · +${NO_BEGINNING_XP} XP`}
-                        onPress={saveTimerWin}
+                        label={
+                          timerOrigin === 'start-cue'
+                            ? `Save this start +${NO_BEGINNING_XP} XP`
+                            : `Save this as a tiny win +${NO_BEGINNING_XP} XP`
+                        }
+                        onPress={saveTimerResultWin}
                         small
                       />
                     </View>
@@ -1623,15 +1816,27 @@ export default function CantStartScreen() {
                       small
                       style={styles.successBtn}
                     />
-                    <Pressable
-                      onPress={returnToActivationMenu}
-                      accessibilityRole="button"
-                      accessibilityLabel="Try another way to start"
-                      style={({ pressed }) => [styles.quietAction, pressed && styles.pressed]}>
-                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
-                        Try another way to start
-                      </Text>
-                    </Pressable>
+                    {timerOrigin === 'start-cue' ? (
+                      <Pressable
+                        onPress={() => setNoBeginningStage('cue-ready')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Back to my cue"
+                        style={({ pressed }) => [styles.quietAction, pressed && styles.pressed]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Back to my cue
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <Pressable
+                        onPress={returnToActivationMenu}
+                        accessibilityRole="button"
+                        accessibilityLabel="Try another way to start"
+                        style={({ pressed }) => [styles.quietAction, pressed && styles.pressed]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Try another way to start
+                        </Text>
+                      </Pressable>
+                    )}
                   </View>
                 </GlassCard>
               </View>
@@ -1640,18 +1845,16 @@ export default function CantStartScreen() {
 
           {isNoBeginningFlow && noBeginningStage === 'cue-setup' ? (
             <View style={styles.stageShell}>
-              <View style={styles.stageInner}>
+              <View style={[styles.stageInner, styles.formInner]}>
                 <InternalBack label="Back to start tools" onPress={returnToActivationMenu} />
                 <Text style={[styles.eyebrow, { color: theme.textMuted }]}>START CUE</Text>
-                <Text style={[styles.stageTitle, { color: theme.text }]}>
-                  Give the task a clear moment to begin.
-                </Text>
-                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>Give the task a clear moment to begin.</Text>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary, marginBottom: nbFieldGap }]}>
                   Connect the task to something that is already going to happen. Your brain gets a
                   cue instead of another decision.
                 </Text>
 
-                <View style={styles.taskFieldBlock}>
+                <View style={[styles.taskFieldBlock, { marginBottom: nbFieldGap }]}>
                   <Text style={[styles.taskFieldLabel, { color: theme.text }]}>When...</Text>
                   <TextInput
                     value={cueWhen}
@@ -1681,7 +1884,7 @@ export default function CantStartScreen() {
                   </View>
                 </View>
 
-                <View style={styles.taskFieldBlock}>
+                <View style={[styles.taskFieldBlock, { marginBottom: nbFieldGap }]}>
                   <Text style={[styles.taskFieldLabel, { color: theme.text }]}>I will...</Text>
                   <TextInput
                     value={cueWill}
@@ -1701,10 +1904,12 @@ export default function CantStartScreen() {
                   />
                 </View>
 
-                <Text style={[styles.taskFieldLabel, { color: theme.text }]}>For...</Text>
-                <View style={styles.presetRow}>
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  For...
+                </Text>
+                <View style={[styles.durationRow, { marginBottom: nbFieldGap }]}>
                   {CUE_DURATION_PRESETS.map((mins) => (
-                    <TagPill
+                    <DurationChip
                       key={mins}
                       label={`${mins} minutes`}
                       selected={cueDuration === mins}
@@ -1736,19 +1941,38 @@ export default function CantStartScreen() {
           {isNoBeginningFlow && noBeginningStage === 'cue-ready' ? (
             <View style={styles.stageShell}>
               <View style={[styles.stageInner, isSuccessNarrow && styles.successInnerDesktop]}>
-                <InternalBack label="Back to start tools" onPress={returnToActivationMenu} />
+                <InternalBack label="Back to edit cue" onPress={() => setNoBeginningStage('cue-setup')} />
                 <GlassCard style={styles.cueCard}>
                   <Text style={[styles.cueCardText, { color: theme.text }]}>
                     When {cueWhen.trim()}, I&apos;ll {cueWill.trim()} for {cueDuration} minutes.
                   </Text>
                 </GlassCard>
-                <Text style={[styles.stageSupport, { color: theme.textSecondary, textAlign: 'center' }]}>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary, textAlign: 'center', marginBottom: nbFieldGap }]}>
                   You do not have to finish. This is only your way into the task.
                 </Text>
+
+                <View style={[styles.cueTimerSection, { marginBottom: nbFieldGap }]}>
+                  <Text style={[styles.cueTimerTitle, { color: theme.text }]}>
+                    Want to use your cue right now?
+                  </Text>
+                  <Text style={[styles.cueTimerSupport, { color: theme.textSecondary }]}>
+                    Start the timer for the time you chose. You are still allowed to stop when it
+                    ends.
+                  </Text>
+                  <View style={styles.compactBtn}>
+                    <GradientButton
+                      label={`Start a ${cueDuration}-minute timer`}
+                      onPress={startCueTimer}
+                      variant="secondary"
+                      small
+                    />
+                  </View>
+                </View>
+
                 <View style={styles.successActions}>
                   <View style={styles.successBtn}>
                     <GradientButton
-                      label={`I started with this cue · +${NO_BEGINNING_XP} XP`}
+                      label={`I started with this cue +${NO_BEGINNING_XP} XP`}
                       onPress={saveCueWin}
                       small
                     />
@@ -1776,26 +2000,23 @@ export default function CantStartScreen() {
 
           {isNoBeginningFlow && noBeginningStage === 'blocker-choice' ? (
             <View style={styles.stageShell}>
-              <View style={styles.stageInner}>
+              <View style={[styles.stageInner, styles.formInner]}>
                 <InternalBack label="Back to start tools" onPress={returnToActivationMenu} />
                 <Text style={[styles.eyebrow, { color: theme.textMuted }]}>CLEAR ONE BLOCKER</Text>
                 <Text style={[styles.stageTitle, { color: theme.text }]}>
                   What is making the start harder?
                 </Text>
-                <Text style={[styles.stageSupport, { color: theme.textSecondary }]}>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary, marginBottom: nbFieldGap }]}>
                   You do not have to fix the whole environment. Remove one small obstacle.
                 </Text>
 
                 <View style={styles.blockerList}>
-                  {BLOCKER_PRESETS.map((blocker) => (
-                    <BlockerOptionCard
+                  {allBlockers.map((blocker) => (
+                    <BlockerCheckRow
                       key={blocker}
                       label={blocker}
-                      onPress={() => {
-                        setSelectedBlocker(blocker);
-                        setShowCustomBlocker(false);
-                        setNoBeginningStage('blocker-active');
-                      }}
+                      checked={checkedBlocker === blocker}
+                      onPress={() => toggleBlockerCheck(blocker)}
                     />
                   ))}
                   <Pressable
@@ -1815,13 +2036,8 @@ export default function CantStartScreen() {
                       placeholderTextColor={theme.textMuted}
                       accessibilityLabel="Custom blocker"
                       returnKeyType="done"
-                      onSubmitEditing={() => {
-                        const trimmed = customBlockerText.trim();
-                        if (trimmed) {
-                          setSelectedBlocker(trimmed);
-                          setNoBeginningStage('blocker-active');
-                        }
-                      }}
+                      onSubmitEditing={submitCustomBlocker}
+                      autoFocus
                       style={[
                         styles.taskInput,
                         {
@@ -1833,41 +2049,27 @@ export default function CantStartScreen() {
                     />
                   ) : null}
                 </View>
-              </View>
-            </View>
-          ) : null}
 
-          {isNoBeginningFlow && noBeginningStage === 'blocker-active' ? (
-            <View style={styles.stageShell}>
-              <View style={[styles.stageInner, isSuccessNarrow && styles.successInnerDesktop]}>
-                <InternalBack label="Back to start tools" onPress={returnToActivationMenu} />
-                <Text style={[styles.stageTitle, { color: theme.text }]}>
-                  Clear just this one thing.
-                </Text>
-                <GlassCard style={styles.blockerActiveCard}>
-                  <Text style={[styles.blockerActiveText, { color: theme.text }]}>
-                    {selectedBlocker}
-                  </Text>
-                </GlassCard>
-                <View style={styles.successActions}>
-                  <View style={styles.successBtn}>
-                    <GradientButton
-                      label={`I cleared it · +${NO_BEGINNING_XP} XP`}
-                      onPress={saveBlockerWin}
-                      small
-                    />
+                {checkedBlocker ? (
+                  <View style={[styles.actionStack, { marginTop: nbFieldGap }]}>
+                    <View style={styles.compactBtn}>
+                      <GradientButton
+                        label={`Save this as a tiny win +${NO_BEGINNING_XP} XP`}
+                        onPress={saveBlockerWin}
+                        small
+                      />
+                    </View>
+                    <Pressable
+                      onPress={() => setCheckedBlocker(null)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose a different blocker"
+                      style={({ pressed }) => [styles.quietAction, pressed && styles.pressed]}>
+                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                        Choose a different blocker
+                      </Text>
+                    </Pressable>
                   </View>
-                  <GradientButton
-                    label="This doesn't fit"
-                    onPress={() => {
-                      setSelectedBlocker(null);
-                      setNoBeginningStage('blocker-choice');
-                    }}
-                    variant="secondary"
-                    small
-                    style={styles.successBtn}
-                  />
-                </View>
+                ) : null}
               </View>
             </View>
           ) : null}
@@ -2543,6 +2745,56 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
+  formInner: {
+    maxWidth: 860,
+    alignSelf: 'center',
+  },
+  durationRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  durationChip: {
+    minHeight: 44,
+    paddingHorizontal: spacing.md + 4,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.full,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  durationChipText: {
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  customDurationInput: {
+    maxWidth: 160,
+  },
+  validationText: {
+    ...typography.caption,
+    marginTop: spacing.xs,
+    lineHeight: 18,
+  },
+  cueTimerSection: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  cueTimerTitle: {
+    ...typography.body,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  cueTimerSupport: {
+    ...typography.bodySmall,
+    textAlign: 'center',
+    maxWidth: 420,
+    lineHeight: 20,
+    marginBottom: spacing.sm,
+  },
   exampleRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2567,19 +2819,30 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     width: '100%',
   },
-  blockerCardPressable: {
+  blockerCheckPressable: {
     width: '100%',
   },
-  blockerCard: {
-    borderRadius: radii.lg,
+  blockerCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radii.md,
     borderWidth: 1,
-    padding: spacing.lg,
-    minHeight: 56,
-    justifyContent: 'center',
+    padding: spacing.md,
+    minHeight: 52,
   },
-  blockerLabel: {
+  blockerCheckbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  blockerCheckText: {
     ...typography.body,
-    fontWeight: '600',
+    flex: 1,
     lineHeight: 22,
   },
   customBlockerBtn: {
@@ -2588,15 +2851,5 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
     justifyContent: 'center',
-  },
-  blockerActiveCard: {
-    padding: spacing.lg,
-    marginVertical: spacing.md,
-    width: '100%',
-  },
-  blockerActiveText: {
-    ...typography.h3,
-    textAlign: 'center',
-    lineHeight: 28,
   },
 });

@@ -14,6 +14,8 @@ export type GentleTimerProps = {
   goal?: string;
   compact?: boolean;
   endLabel?: string;
+  pauseLabel?: string;
+  resumeLabel?: string;
   onFinish: (reason: GentleTimerFinishReason) => void;
   children?: ReactNode;
 };
@@ -24,6 +26,8 @@ export function GentleTimer({
   goal,
   compact = false,
   endLabel = 'End early',
+  pauseLabel = 'Pause',
+  resumeLabel = 'Resume',
   onFinish,
   children,
 }: GentleTimerProps) {
@@ -69,7 +73,7 @@ export function GentleTimer({
 
       <View style={[styles.actionRow, compact ? styles.actionRowCompact : undefined]}>
         <GradientButton
-          label={paused ? 'Resume' : 'Pause without shame'}
+          label={paused ? resumeLabel : pauseLabel}
           onPress={() => (paused ? resume() : pause())}
           variant="ghost"
           small
