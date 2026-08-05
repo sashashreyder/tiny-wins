@@ -60,9 +60,9 @@ export const stuckTypes: StuckTypeOption[] = [
   },
   {
     id: 'no-beginning',
-    label: "I don't know where to begin",
+    label: "I don't know how to start",
     emoji: '🧭',
-    hint: 'Too many possible first steps.',
+    hint: 'I know what the task is. I need a way to get moving.',
   },
   {
     id: 'scared-bad',

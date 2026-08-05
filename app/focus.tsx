@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppShell } from '@/components/design-system/AppShell';
 import { GradientButton } from '@/components/design-system/Buttons';
 import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
 import { TagPill } from '@/components/design-system/Tags';
+import { GentleTimer } from '@/components/tools/GentleTimer';
 import { focusModes, focusResults } from '@/data/content';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { spacing, typography } from '@/lib/theme';
@@ -19,36 +20,14 @@ export default function FocusScreen() {
 
   const [phase, setPhase] = useState<Phase>('setup');
   const [minutes, setMinutes] = useState(10);
-  const [secondsLeft, setSecondsLeft] = useState(0);
   const [title, setTitle] = useState('');
   const [smallest, setSmallest] = useState('');
   const [distractions, setDistractions] = useState<string[]>([]);
   const [distractionInput, setDistractionInput] = useState('');
-  const [paused, setPaused] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (phase !== 'running' || paused) return;
-    intervalRef.current = setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s <= 1) {
-          clearInterval(intervalRef.current!);
-          setPhase('done');
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [phase, paused]);
 
   const start = (mins: number) => {
     setMinutes(mins || minutes);
-    setSecondsLeft((mins || minutes) * 60);
     setPhase('running');
-    setPaused(false);
   };
 
   const finish = (result: FocusResult) => {
@@ -62,11 +41,9 @@ export default function FocusScreen() {
     setDistractions([]);
   };
 
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
+  const handleTimerFinish = useCallback(() => {
+    setPhase('done');
+  }, []);
 
   return (
     <AppShell title="Focus Sprint">
@@ -114,21 +91,14 @@ export default function FocusScreen() {
           )}
 
           {phase === 'running' && (
-            <GlassCard glow style={styles.timerCard}>
-              <Text style={[styles.timer, { color: theme.text }]}>{formatTime(secondsLeft)}</Text>
-              <Text style={[styles.focusTitle, { color: theme.textSecondary }]}>{title || 'Focus'}</Text>
-              <Text style={{ color: theme.textMuted, marginBottom: spacing.md }}>
-                Goal: {smallest || 'Show up'}
-              </Text>
-
+            <GentleTimer
+              key={`focus-${minutes}`}
+              durationMinutes={minutes}
+              title={title || 'Focus'}
+              goal={smallest || 'Show up'}
+              endLabel="End sprint"
+              onFinish={handleTimerFinish}>
               <View style={styles.actionRow}>
-                <GradientButton
-                  label={paused ? 'Resume' : 'Pause without shame'}
-                  onPress={() => setPaused(!paused)}
-                  variant="ghost"
-                  small
-                  style={{ flex: 1 }}
-                />
                 <GradientButton
                   label="I got distracted"
                   onPress={() => {
@@ -151,9 +121,13 @@ export default function FocusScreen() {
                 style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder }]}
               />
 
-              <GradientButton label="Make task smaller" onPress={() => setPhase('done')} variant="ghost" small />
-              <GradientButton label="End sprint" onPress={() => setPhase('done')} small />
-            </GlassCard>
+              <GradientButton
+                label="Make task smaller"
+                onPress={() => setPhase('done')}
+                variant="ghost"
+                small
+              />
+            </GentleTimer>
           )}
 
           {phase === 'done' && (
@@ -179,9 +153,6 @@ const styles = StyleSheet.create({
   label: { ...typography.caption, marginBottom: 4 },
   input: { borderWidth: 1, borderRadius: 12, padding: spacing.sm, marginBottom: spacing.sm, ...typography.body },
   modeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
-  timerCard: { alignItems: 'center', paddingVertical: spacing.xl },
-  timer: { fontSize: 64, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  focusTitle: { ...typography.h3, marginBottom: spacing.sm },
   actionRow: { flexDirection: 'row', gap: spacing.sm, width: '100%', marginBottom: spacing.sm },
   resultCard: { marginBottom: spacing.sm },
 });
