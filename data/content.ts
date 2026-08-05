@@ -80,7 +80,7 @@ export const stuckTypes: StuckTypeOption[] = [
     id: 'tired',
     label: "I'm tired",
     emoji: '🔋',
-    hint: 'Your body wants rest, not a big push.',
+    hint: 'Your energy needs protection, not a bigger push.',
   },
   {
     id: 'avoiding-message',

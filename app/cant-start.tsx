@@ -38,6 +38,26 @@ import {
   pickBoredomChallenge,
 } from '@/data/boredom';
 import {
+  LOW_ENERGY_DURATION_PRESETS,
+  LOW_ENERGY_ENOUGH_PRESETS,
+  PAUSE_DURATION_PRESETS,
+  PAUSE_OPTIONS,
+  RECHARGE_COMPLETION_COPY,
+  RECHARGE_METHODS,
+  RechargeChecklistItem,
+  RechargeMethod,
+  RechargeOption,
+  RechargeStage,
+  TIRED_FEELING_OPTIONS,
+  TiredFeeling,
+  buildRechargeWinTitle,
+  formatSmallerDaySummary,
+  getPauseOptionLabel,
+  getSuggestedRechargeMethod,
+  makeBodyResetItems,
+  makeSmallerDayItems,
+} from '@/data/recharge';
+import {
   PressureRuleState,
   VERSION_ZERO_MODES,
   VersionZeroMode,
@@ -67,15 +87,20 @@ const STEP_XP = calculateXP('tiny-win');
 const NO_BEGINNING_XP = calculateXP('tiny-win');
 const VERSION_ZERO_XP = calculateXP('tiny-win');
 const BOREDOM_XP = calculateXP('tiny-win');
+const RECHARGE_XP = calculateXP('tiny-win');
 const VERSION_ZERO_MENU_MAX_WIDTH = 960;
 const VERSION_ZERO_ACTIVE_MAX_WIDTH = 880;
 const VERSION_ZERO_COMPLETE_MAX_WIDTH = 790;
 const BOREDOM_MENU_MAX_WIDTH = 1000;
 const BOREDOM_ACTIVE_MAX_WIDTH = 880;
 const BOREDOM_COMPLETE_MAX_WIDTH = 790;
+const RECHARGE_MENU_MAX_WIDTH = 1000;
+const RECHARGE_ACTIVE_MAX_WIDTH = 880;
+const RECHARGE_COMPLETE_MAX_WIDTH = 790;
 const TIMER_PRESETS = [2, 5, 10] as const;
 const CUE_DURATION_PRESETS = [2, 5, 10] as const;
 const BREAK_DURATION_PRESETS = [5, 10, 15] as const;
+const LOW_ENERGY_ENOUGH_MAX = 120;
 
 const NO_BEGINNING_HEADLINES = [
   'You got moving!',
@@ -392,12 +417,28 @@ function parseCustomMinutes(input: string): number | null {
 }
 
 function customDurationError(input: string): string | null {
+  return customDurationErrorMax(input, 60);
+}
+
+function sanitizeCustomMinutesInputMax(value: string, maxDigits: number): string {
+  return value.replace(/\D/g, '').slice(0, maxDigits);
+}
+
+function parseCustomMinutesMax(input: string, max: number): number | null {
+  const trimmed = input.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const minutes = parseInt(trimmed, 10);
+  if (minutes < 1 || minutes > max) return null;
+  return minutes;
+}
+
+function customDurationErrorMax(input: string, max: number): string | null {
   const trimmed = input.trim();
   if (!trimmed) return 'Enter a number of minutes.';
   if (!/^\d+$/.test(trimmed)) return 'Use whole minutes only.';
   const minutes = parseInt(trimmed, 10);
   if (minutes < 1) return 'Minimum is 1 minute.';
-  if (minutes > 60) return 'Maximum is 60 minutes.';
+  if (minutes > max) return `Maximum is ${max} minutes.`;
   return null;
 }
 
@@ -891,6 +932,381 @@ function BoringTaxRow({
   );
 }
 
+function RechargeMethodCard({
+  icon,
+  title,
+  description,
+  suggested,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  suggested?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={suggested ? `${title}, suggested` : title}
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.methodCardPressable,
+        pressed && styles.pressed,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
+      <View
+        style={[
+          styles.methodCard,
+          {
+            backgroundColor: suggested ? theme.accentTertiary + 'CC' : theme.surface,
+            borderColor: suggested ? theme.accent : theme.surfaceBorder,
+            borderWidth: suggested ? 2 : 1,
+          },
+        ]}>
+        {suggested ? (
+          <View style={[styles.suggestedBadge, { backgroundColor: theme.accentSecondary + '33' }]}>
+            <Text style={[styles.suggestedBadgeText, { color: theme.accentSecondary }]}>
+              Suggested
+            </Text>
+          </View>
+        ) : null}
+        <Text style={styles.methodIcon}>{icon}</Text>
+        <Text style={[styles.methodTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>{description}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function PauseTypeRow({
+  option,
+  selected,
+  onSelect,
+}: {
+  option: RechargeOption;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onSelect}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={option.label}
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.boringTaxRow,
+        {
+          backgroundColor: selected ? theme.accentTertiary : theme.surface,
+          borderColor: selected ? theme.accent : theme.surfaceBorder,
+        },
+        pressed && styles.pressed,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
+      <View style={styles.boringTaxMain}>
+        <View
+          style={[
+            styles.checkbox,
+            {
+              borderColor: selected ? theme.accent : theme.surfaceBorder,
+              backgroundColor: selected ? theme.accent : 'transparent',
+            },
+          ]}>
+          {selected ? <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text> : null}
+        </View>
+        <Text style={[styles.boringTaxLabel, { color: theme.text }]}>{option.label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function RechargeBodyRow({
+  item,
+  isEditing,
+  editingText,
+  onEditingTextChange,
+  onToggleComplete,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+}: {
+  item: RechargeChecklistItem;
+  isEditing: boolean;
+  editingText: string;
+  onEditingTextChange: (text: string) => void;
+  onToggleComplete: () => void;
+  onStartEdit: () => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: () => void;
+}) {
+  const theme = useAppTheme();
+
+  if (isEditing) {
+    return (
+      <View
+        style={[
+          styles.checkRow,
+          {
+            backgroundColor: theme.surface,
+            borderColor: theme.accent,
+            borderWidth: 2,
+          },
+        ]}>
+        <TextInput
+          value={editingText}
+          onChangeText={onEditingTextChange}
+          placeholder="What my body needs"
+          placeholderTextColor={theme.textMuted}
+          autoFocus
+          returnKeyType="done"
+          blurOnSubmit={false}
+          onSubmitEditing={onSaveEdit}
+          maxLength={TASK_TEXT_MAX}
+          accessibilityLabel={`Edit: ${item.text || 'body care item'}`}
+          style={[
+            styles.editInput,
+            {
+              color: theme.text,
+              backgroundColor: theme.background,
+              borderColor: theme.surfaceBorder,
+            },
+          ]}
+        />
+        <Pressable
+          onPress={onSaveEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Save item"
+          style={[styles.editSaveBtn, { backgroundColor: theme.accentSecondary + '44' }]}>
+          <Text style={[styles.editSaveText, { color: theme.text }]}>Save</Text>
+        </Pressable>
+        <Pressable
+          onPress={onCancelEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel edit"
+          hitSlop={8}
+          style={styles.editCancelBtn}>
+          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.checkRow,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.surfaceBorder,
+          borderWidth: 1,
+          opacity: item.completed ? 0.78 : 1,
+        },
+      ]}>
+      <Pressable
+        onPress={onToggleComplete}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: item.completed }}
+        accessibilityLabel={
+          item.completed ? `Uncheck: ${item.text}` : `Complete: ${item.text}`
+        }
+        style={({ pressed, focused }: PressableFocusState) => [
+          styles.checkRowMain,
+          pressed && styles.pressed,
+          focused && Platform.OS === 'web' ? styles.focusRing : null,
+        ]}>
+        <View
+          style={[
+            styles.checkbox,
+            item.completed
+              ? {
+                  borderColor: theme.accentSecondary,
+                  backgroundColor: theme.accentSecondary + '55',
+                }
+              : { borderColor: theme.surfaceBorder, backgroundColor: 'transparent' },
+          ]}>
+          {item.completed ? (
+            <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text>
+          ) : null}
+        </View>
+        <Text
+          style={[
+            styles.checkText,
+            {
+              color: theme.text,
+              textDecorationLine: item.completed ? 'line-through' : 'none',
+            },
+          ]}>
+          {item.text}
+        </Text>
+      </Pressable>
+      <View style={styles.rowActions}>
+        <Pressable
+          onPress={onStartEdit}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accentSecondary + '22' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowEditIcon, { color: theme.accentSecondary }]}>✎</Text>
+        </Pressable>
+        <Pressable
+          onPress={onDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accent + '18' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowDeleteIcon, { color: theme.accent }]}>🗑</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function RechargePermissionRow({
+  item,
+  isEditing,
+  editingText,
+  onEditingTextChange,
+  onToggle,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+}: {
+  item: RechargeChecklistItem;
+  isEditing: boolean;
+  editingText: string;
+  onEditingTextChange: (text: string) => void;
+  onToggle: () => void;
+  onStartEdit: () => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: () => void;
+}) {
+  const theme = useAppTheme();
+
+  if (isEditing) {
+    return (
+      <View
+        style={[
+          styles.checkRow,
+          {
+            backgroundColor: theme.surface,
+            borderColor: theme.accent,
+            borderWidth: 2,
+          },
+        ]}>
+        <TextInput
+          value={editingText}
+          onChangeText={onEditingTextChange}
+          placeholder="Permission text"
+          placeholderTextColor={theme.textMuted}
+          autoFocus
+          returnKeyType="done"
+          blurOnSubmit={false}
+          onSubmitEditing={onSaveEdit}
+          maxLength={TASK_TEXT_MAX}
+          accessibilityLabel={`Edit: ${item.text || 'permission'}`}
+          style={[
+            styles.editInput,
+            {
+              color: theme.text,
+              backgroundColor: theme.background,
+              borderColor: theme.surfaceBorder,
+            },
+          ]}
+        />
+        <Pressable
+          onPress={onSaveEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Save permission"
+          style={[styles.editSaveBtn, { backgroundColor: theme.accentSecondary + '44' }]}>
+          <Text style={[styles.editSaveText, { color: theme.text }]}>Save</Text>
+        </Pressable>
+        <Pressable
+          onPress={onCancelEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel edit"
+          hitSlop={8}
+          style={styles.editCancelBtn}>
+          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.boringTaxRow,
+        {
+          backgroundColor: item.completed ? theme.accentTertiary : theme.surface,
+          borderColor: item.completed ? theme.accent : theme.surfaceBorder,
+        },
+      ]}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: item.completed }}
+        accessibilityLabel={item.text}
+        style={({ pressed, focused }: PressableFocusState) => [
+          styles.boringTaxMain,
+          pressed && styles.pressed,
+          focused && Platform.OS === 'web' ? styles.focusRing : null,
+        ]}>
+        <View
+          style={[
+            styles.checkbox,
+            {
+              borderColor: item.completed ? theme.accent : theme.surfaceBorder,
+              backgroundColor: item.completed ? theme.accent : 'transparent',
+            },
+          ]}>
+          {item.completed ? (
+            <Text style={{ color: theme.text, fontWeight: '700' }}>✓</Text>
+          ) : null}
+        </View>
+        <Text style={[styles.boringTaxLabel, { color: theme.text }]}>{item.text}</Text>
+      </Pressable>
+      <View style={styles.rowActions}>
+        <Pressable
+          onPress={onStartEdit}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accentSecondary + '22' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowEditIcon, { color: theme.accentSecondary }]}>✎</Text>
+        </Pressable>
+        <Pressable
+          onPress={onDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete: ${item.text}`}
+          style={({ pressed }) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accent + '18' },
+            pressed && styles.rowIconBtnPressed,
+          ]}>
+          <Text style={[styles.rowDeleteIcon, { color: theme.accent }]}>🗑</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function BlockerChecklistRow({
   item,
   isEditing,
@@ -1373,17 +1789,53 @@ export default function CantStartScreen() {
   const boredomRewardingRef = useRef(false);
   const boredomStageRef = useRef<BoredomStage>('menu');
 
+  const [rechargeStage, setRechargeStage] = useState<RechargeStage>('menu');
+  const [rechargeMethod, setRechargeMethod] = useState<RechargeMethod | null>(null);
+  const [tiredFeeling, setTiredFeeling] = useState<TiredFeeling | null>(null);
+  const [selectedPauseId, setSelectedPauseId] = useState<string | null>(null);
+  const [customPauseText, setCustomPauseText] = useState('');
+  const [pauseDuration, setPauseDuration] = useState(20);
+  const [pauseHasTimer, setPauseHasTimer] = useState(true);
+  const [pauseDurationCustom, setPauseDurationCustom] = useState(false);
+  const [pauseCustomMinutes, setPauseCustomMinutes] = useState('');
+  const [pauseRunKey, setPauseRunKey] = useState(0);
+  const [bodyResetItems, setBodyResetItems] = useState<RechargeChecklistItem[]>(makeBodyResetItems);
+  const [bodyEditingId, setBodyEditingId] = useState<string | null>(null);
+  const [bodyEditingText, setBodyEditingText] = useState('');
+  const [showCustomBodyItem, setShowCustomBodyItem] = useState(false);
+  const [customBodyText, setCustomBodyText] = useState('');
+  const [smallerDayItems, setSmallerDayItems] =
+    useState<RechargeChecklistItem[]>(makeSmallerDayItems);
+  const [smallerEditingId, setSmallerEditingId] = useState<string | null>(null);
+  const [smallerEditingText, setSmallerEditingText] = useState('');
+  const [showCustomPermission, setShowCustomPermission] = useState(false);
+  const [customPermissionText, setCustomPermissionText] = useState('');
+  const [lowEnergyTask, setLowEnergyTask] = useState('');
+  const [lowEnergyEnough, setLowEnergyEnough] = useState('');
+  const [lowEnergyDuration, setLowEnergyDuration] = useState(10);
+  const [lowEnergyHasTimer, setLowEnergyHasTimer] = useState(true);
+  const [lowEnergyDurationCustom, setLowEnergyDurationCustom] = useState(false);
+  const [lowEnergyCustomMinutes, setLowEnergyCustomMinutes] = useState('');
+  const [lowEnergyRunKey, setLowEnergyRunKey] = useState(0);
+  const [rechargeRewarded, setRechargeRewarded] = useState(false);
+  const [rechargeXpEarned, setRechargeXpEarned] = useState(0);
+  const [rcInputFocused, setRcInputFocused] = useState(false);
+  const rechargeRewardingRef = useRef(false);
+  const rechargeStageRef = useRef<RechargeStage>('menu');
+
   const isTooBigFlow = stuckType === 'too-big';
   const isNoBeginningFlow = stuckType === 'no-beginning';
   const isVersionZeroFlow = stuckType === 'scared-bad';
   const isBoredomFlow = stuckType === 'bored';
+  const isRechargeFlow = stuckType === 'tired';
   const showContextStage = isTooBigFlow && tooBigStage === 'context';
   const showLegacyQuestStage =
     Boolean(stuckType) &&
     !isTooBigFlow &&
     !isNoBeginningFlow &&
     !isVersionZeroFlow &&
-    !isBoredomFlow;
+    !isBoredomFlow &&
+    !isRechargeFlow;
   const suggestedContextOption = taskContextOptions.find((o) => o.id === suggestedContext);
 
   const flowTemplate = confirmedContext ? taskFlowTemplates[confirmedContext] : null;
@@ -1397,11 +1849,14 @@ export default function CantStartScreen() {
   const isDesktopLayout = viewportWidth >= 768;
   const methodColumns = viewportWidth >= 768 ? 3 : 1;
   const boredomMethodColumns = viewportWidth >= 768 ? 2 : 1;
+  const rechargeMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const methodGap = viewportWidth >= 768 ? 16 : 12;
   const nbSectionGap = isDesktopLayout ? 32 : 22;
   const nbFieldGap = isDesktopLayout ? 26 : 20;
   const bdSectionGap = isDesktopLayout ? 32 : 22;
   const bdFieldGap = isDesktopLayout ? 26 : 20;
+  const rcSectionGap = isDesktopLayout ? 32 : 22;
+  const rcFieldGap = isDesktopLayout ? 26 : 20;
   const customDurationErrorText = isCustomDuration ? customDurationError(customDurationInput) : null;
   const resolvedCustomMinutes = parseCustomMinutes(customDurationInput);
   const canStartTimer = isCustomDuration
@@ -1473,13 +1928,54 @@ export default function CantStartScreen() {
     boredomMethod !== null ? BOREDOM_COMPLETION_COPY[boredomMethod] : null;
 
   boredomStageRef.current = boredomStage;
+  rechargeStageRef.current = rechargeStage;
+
+  const suggestedRechargeMethod = getSuggestedRechargeMethod(tiredFeeling);
+  const pauseLabel = getPauseOptionLabel(selectedPauseId, customPauseText);
+  const canUseCustomPause =
+    selectedPauseId !== 'custom' || customPauseText.trim().length > 0;
+  const pauseCustomErrorText = pauseDurationCustom
+    ? customDurationErrorMax(pauseCustomMinutes, 120)
+    : null;
+  const resolvedPauseMinutes = pauseDurationCustom
+    ? parseCustomMinutesMax(pauseCustomMinutes, 120)
+    : pauseDuration;
+  const canStartPause =
+    Boolean(selectedPauseId) &&
+    canUseCustomPause &&
+    (!pauseHasTimer ||
+      (pauseDurationCustom
+        ? resolvedPauseMinutes !== null
+        : (PAUSE_DURATION_PRESETS as readonly number[]).includes(pauseDuration)));
+  const bodyCompletedItems = bodyResetItems.filter((item) => item.completed);
+  const bodyCompletedCount = bodyCompletedItems.length;
+  const selectedSmallerLabels = smallerDayItems
+    .filter((item) => item.completed)
+    .map((item) => item.text);
+  const smallerDaySummary = formatSmallerDaySummary(selectedSmallerLabels);
+  const lowEnergyCustomErrorText = lowEnergyDurationCustom
+    ? customDurationError(lowEnergyCustomMinutes)
+    : null;
+  const resolvedLowEnergyMinutes = lowEnergyDurationCustom
+    ? parseCustomMinutes(lowEnergyCustomMinutes)
+    : lowEnergyDuration;
+  const canStartLowEnergy =
+    lowEnergyTask.trim().length > 0 &&
+    lowEnergyEnough.trim().length > 0 &&
+    (!lowEnergyHasTimer ||
+      (lowEnergyDurationCustom
+        ? resolvedLowEnergyMinutes !== null
+        : (LOW_ENERGY_DURATION_PRESETS as readonly number[]).includes(lowEnergyDuration)));
+  const rechargeCompletionCopy =
+    rechargeMethod !== null ? RECHARGE_COMPLETION_COPY[rechargeMethod] : null;
 
   const quests = useMemo(() => {
     if (
       !stuckType ||
       stuckType === 'too-big' ||
       stuckType === 'scared-bad' ||
-      stuckType === 'bored'
+      stuckType === 'bored' ||
+      stuckType === 'tired'
     ) {
       return [];
     }
@@ -1601,6 +2097,40 @@ export default function CantStartScreen() {
     setBoredomRewarded(false);
     setBoredomXpEarned(0);
     boredomRewardingRef.current = false;
+  };
+
+  const resetRechargeState = () => {
+    setRechargeStage('menu');
+    setRechargeMethod(null);
+    setTiredFeeling(null);
+    setSelectedPauseId(null);
+    setCustomPauseText('');
+    setPauseDuration(20);
+    setPauseHasTimer(true);
+    setPauseDurationCustom(false);
+    setPauseCustomMinutes('');
+    setPauseRunKey(0);
+    setBodyResetItems(makeBodyResetItems());
+    setBodyEditingId(null);
+    setBodyEditingText('');
+    setShowCustomBodyItem(false);
+    setCustomBodyText('');
+    setSmallerDayItems(makeSmallerDayItems());
+    setSmallerEditingId(null);
+    setSmallerEditingText('');
+    setShowCustomPermission(false);
+    setCustomPermissionText('');
+    setLowEnergyTask('');
+    setLowEnergyEnough('');
+    setLowEnergyDuration(10);
+    setLowEnergyHasTimer(true);
+    setLowEnergyDurationCustom(false);
+    setLowEnergyCustomMinutes('');
+    setLowEnergyRunKey(0);
+    setRechargeRewarded(false);
+    setRechargeXpEarned(0);
+    setRcInputFocused(false);
+    rechargeRewardingRef.current = false;
   };
 
   const returnToBoredomMenu = () => {
@@ -1776,9 +2306,276 @@ export default function CantStartScreen() {
           setBoredomStage('break-setup');
           setBreakRunKey((key) => key + 1);
         }
+        if (rechargeStageRef.current === 'pause-running') {
+          setRechargeStage('pause-setup');
+          setPauseRunKey((key) => key + 1);
+        }
+        if (rechargeStageRef.current === 'low-energy-running') {
+          setRechargeStage('low-energy-setup');
+          setLowEnergyRunKey((key) => key + 1);
+        }
       };
     }, []),
   );
+
+  const returnToRechargeMenu = () => {
+    setRechargeStage('menu');
+    setRechargeMethod(null);
+  };
+
+  const tryAnotherRechargeTool = () => {
+    setRechargeRewarded(false);
+    setRechargeXpEarned(0);
+    rechargeRewardingRef.current = false;
+    setRechargeMethod(null);
+    setSelectedPauseId(null);
+    setCustomPauseText('');
+    setPauseDuration(20);
+    setPauseHasTimer(true);
+    setPauseDurationCustom(false);
+    setPauseCustomMinutes('');
+    setPauseRunKey(0);
+    setBodyResetItems(makeBodyResetItems());
+    setBodyEditingId(null);
+    setBodyEditingText('');
+    setShowCustomBodyItem(false);
+    setCustomBodyText('');
+    setSmallerDayItems(makeSmallerDayItems());
+    setSmallerEditingId(null);
+    setSmallerEditingText('');
+    setShowCustomPermission(false);
+    setCustomPermissionText('');
+    setLowEnergyTask('');
+    setLowEnergyEnough('');
+    setLowEnergyDuration(10);
+    setLowEnergyHasTimer(true);
+    setLowEnergyDurationCustom(false);
+    setLowEnergyCustomMinutes('');
+    setLowEnergyRunKey(0);
+    setRechargeStage('menu');
+  };
+
+  const selectRechargeMethod = (method: RechargeMethod) => {
+    setRechargeMethod(method);
+    if (method === 'real-pause') {
+      setRechargeStage('pause-setup');
+      return;
+    }
+    if (method === 'body-first') {
+      setRechargeStage('body-reset');
+      return;
+    }
+    if (method === 'make-today-smaller') {
+      setRechargeStage('smaller-day');
+      return;
+    }
+    setRechargeStage('low-energy-setup');
+  };
+
+  const awardRechargeWin = (title: string, category: TinyWinCategory) => {
+    if (rechargeRewarded || rechargeRewardingRef.current) return;
+    rechargeRewardingRef.current = true;
+    addTinyWin(title.slice(0, 80), category, false);
+    markAchievementEvent('cant-start-quest');
+    setRechargeRewarded(true);
+    setRechargeXpEarned(RECHARGE_XP);
+    setRechargeStage('complete');
+  };
+
+  const completePauseWin = () => {
+    const title = buildRechargeWinTitle({
+      method: 'real-pause',
+      pauseLabel,
+    });
+    awardRechargeWin(title, 'self-care');
+  };
+
+  const completeBodyResetWin = () => {
+    if (bodyCompletedCount === 0) return;
+    const title = buildRechargeWinTitle({
+      method: 'body-first',
+      completedBodyItems: bodyCompletedItems.map((item) => item.text),
+    });
+    awardRechargeWin(title, 'body-reset');
+  };
+
+  const completeSmallerDayWin = () => {
+    if (selectedSmallerLabels.length === 0) return;
+    const title = buildRechargeWinTitle({
+      method: 'make-today-smaller',
+      smallerDayLabel: selectedSmallerLabels[0],
+    });
+    awardRechargeWin(title, 'self-care');
+  };
+
+  const completeLowEnergyWin = () => {
+    const enough = lowEnergyEnough.trim();
+    if (!enough) return;
+    const title = buildRechargeWinTitle({
+      method: 'low-energy',
+      enoughText: enough,
+    });
+    const category = inferTinyWinCategory(lowEnergyTask, 'self-care');
+    awardRechargeWin(title, category);
+  };
+
+  const startPause = () => {
+    if (!canStartPause) return;
+    if (pauseHasTimer) {
+      if (pauseDurationCustom && resolvedPauseMinutes !== null) {
+        setPauseDuration(resolvedPauseMinutes);
+      }
+      setPauseRunKey((key) => key + 1);
+      setRechargeStage('pause-running');
+      return;
+    }
+    setRechargeStage('pause-running');
+  };
+
+  const startLowEnergy = () => {
+    if (!canStartLowEnergy) return;
+    if (lowEnergyHasTimer) {
+      if (lowEnergyDurationCustom && resolvedLowEnergyMinutes !== null) {
+        setLowEnergyDuration(resolvedLowEnergyMinutes);
+      }
+      setLowEnergyRunKey((key) => key + 1);
+      setRechargeStage('low-energy-running');
+      return;
+    }
+    setRechargeStage('low-energy-running');
+  };
+
+  const restartLowEnergyRound = () => {
+    if (lowEnergyHasTimer) {
+      setLowEnergyRunKey((key) => key + 1);
+      setRechargeStage('low-energy-running');
+      return;
+    }
+    setRechargeStage('low-energy-running');
+  };
+
+  const openLowEnergyFromPause = () => {
+    setRechargeMethod('low-energy');
+    setRechargeStage('low-energy-setup');
+  };
+
+  const backFromRechargeComplete = () => {
+    if (rechargeMethod === 'real-pause') {
+      setRechargeStage('pause-result');
+      return;
+    }
+    if (rechargeMethod === 'body-first') {
+      setRechargeStage('body-reset');
+      return;
+    }
+    if (rechargeMethod === 'make-today-smaller') {
+      setRechargeStage('smaller-day');
+      return;
+    }
+    setRechargeStage('low-energy-result');
+  };
+
+  const toggleBodyResetItem = (id: string) => {
+    setBodyResetItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, completed: !item.completed } : item,
+      ),
+    );
+  };
+
+  const submitCustomBodyItem = () => {
+    const trimmed = customBodyText.trim();
+    if (!trimmed) return;
+    setBodyResetItems((prev) => [
+      ...prev,
+      {
+        id: `body-custom-${Date.now()}`,
+        text: trimmed.slice(0, TASK_TEXT_MAX),
+        completed: false,
+        isCustom: true,
+      },
+    ]);
+    setCustomBodyText('');
+    setShowCustomBodyItem(false);
+  };
+
+  const saveBodyEdit = () => {
+    if (!bodyEditingId) return;
+    const trimmed = bodyEditingText.trim();
+    if (!trimmed) return;
+    setBodyResetItems((prev) =>
+      prev.map((item) =>
+        item.id === bodyEditingId
+          ? { ...item, text: trimmed.slice(0, TASK_TEXT_MAX) }
+          : item,
+      ),
+    );
+    setBodyEditingId(null);
+    setBodyEditingText('');
+  };
+
+  const deleteBodyItem = (id: string) => {
+    setBodyResetItems((prev) => prev.filter((item) => item.id !== id));
+    if (bodyEditingId === id) {
+      setBodyEditingId(null);
+      setBodyEditingText('');
+    }
+  };
+
+  const clearCompletedBodyItems = () => {
+    setBodyResetItems((prev) => prev.map((item) => ({ ...item, completed: false })));
+  };
+
+  const toggleSmallerDayItem = (id: string) => {
+    setSmallerDayItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, completed: !item.completed } : item,
+      ),
+    );
+  };
+
+  const submitCustomPermission = () => {
+    const trimmed = customPermissionText.trim();
+    if (!trimmed) return;
+    setSmallerDayItems((prev) => [
+      ...prev,
+      {
+        id: `permission-custom-${Date.now()}`,
+        text: trimmed.slice(0, TASK_TEXT_MAX),
+        completed: true,
+        isCustom: true,
+      },
+    ]);
+    setCustomPermissionText('');
+    setShowCustomPermission(false);
+  };
+
+  const saveSmallerEdit = () => {
+    if (!smallerEditingId) return;
+    const trimmed = smallerEditingText.trim();
+    if (!trimmed) return;
+    setSmallerDayItems((prev) =>
+      prev.map((item) =>
+        item.id === smallerEditingId
+          ? { ...item, text: trimmed.slice(0, TASK_TEXT_MAX) }
+          : item,
+      ),
+    );
+    setSmallerEditingId(null);
+    setSmallerEditingText('');
+  };
+
+  const deleteSmallerItem = (id: string) => {
+    setSmallerDayItems((prev) => prev.filter((item) => item.id !== id));
+    if (smallerEditingId === id) {
+      setSmallerEditingId(null);
+      setSmallerEditingText('');
+    }
+  };
+
+  const clearSmallerChoices = () => {
+    setSmallerDayItems((prev) => prev.map((item) => ({ ...item, completed: false })));
+  };
 
   const selectVersionZeroMode = (mode: VersionZeroMode) => {
     setVersionZeroMode(mode);
@@ -1837,21 +2634,31 @@ export default function CantStartScreen() {
       resetNoBeginningState();
       resetVersionZeroState();
       resetBoredomState();
+      resetRechargeState();
     } else if (type === 'no-beginning') {
       resetTooBigLocalState();
       resetVersionZeroState();
       resetNoBeginningState();
       resetBoredomState();
+      resetRechargeState();
     } else if (type === 'scared-bad') {
       resetTooBigLocalState();
       resetNoBeginningState();
       resetVersionZeroState();
       resetBoredomState();
+      resetRechargeState();
     } else if (type === 'bored') {
       resetTooBigLocalState();
       resetNoBeginningState();
       resetVersionZeroState();
       resetBoredomState();
+      resetRechargeState();
+    } else if (type === 'tired') {
+      resetTooBigLocalState();
+      resetNoBeginningState();
+      resetVersionZeroState();
+      resetBoredomState();
+      resetRechargeState();
     } else {
       setTooBigStage('context');
       setManualContext(null);
@@ -1863,6 +2670,7 @@ export default function CantStartScreen() {
       resetNoBeginningState();
       resetVersionZeroState();
       resetBoredomState();
+      resetRechargeState();
     }
   };
 
@@ -1872,6 +2680,7 @@ export default function CantStartScreen() {
     resetNoBeginningState();
     resetVersionZeroState();
     resetBoredomState();
+    resetRechargeState();
   };
 
   const returnToActivationMenu = () => {
@@ -4239,6 +5048,1131 @@ export default function CantStartScreen() {
             </View>
           ) : null}
 
+          {isRechargeFlow && rechargeStage === 'menu' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeMenuInner]}>
+                <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>I&apos;M TIRED</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  You may need recovery, not another productivity trick.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: rcSectionGap },
+                  ]}>
+                  Tired does not mean lazy. Let&apos;s protect the energy you have left before asking
+                  your brain for more.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: rcSectionGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    Rest is part of the process.
+                  </Text>
+                  <Text
+                    style={[
+                      styles.cueSupportText,
+                      { color: theme.textSecondary, marginTop: spacing.sm },
+                    ]}>
+                    You do not have to earn it first.
+                  </Text>
+                </GlassCard>
+
+                <View style={[styles.taskFieldBlock, { marginBottom: rcSectionGap, marginTop: 0 }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    Not sure what might help?
+                  </Text>
+                  <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                    Pick what feels closest, or skip this and choose any tool.
+                  </Text>
+                  <View style={styles.exampleRow}>
+                    {TIRED_FEELING_OPTIONS.map((option) => {
+                      const selected = tiredFeeling === option.id;
+                      return (
+                        <Pressable
+                          key={option.id}
+                          onPress={() =>
+                            setTiredFeeling((current) =>
+                              current === option.id ? null : option.id,
+                            )
+                          }
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={option.label}
+                          style={({ pressed, focused }: PressableFocusState) => [
+                            styles.durationChip,
+                            {
+                              backgroundColor: selected ? theme.accentTertiary : theme.surface,
+                              borderColor: selected ? theme.accent : theme.surfaceBorder,
+                            },
+                            pressed && styles.pressed,
+                            focused && Platform.OS === 'web' ? styles.focusRing : null,
+                          ]}>
+                          <Text
+                            style={[
+                              styles.durationChipText,
+                              { color: selected ? theme.text : theme.textSecondary },
+                            ]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <ActivationMethodsGrid columns={rechargeMethodColumns} gap={methodGap}>
+                  {RECHARGE_METHODS.map((method) => (
+                    <RechargeMethodCard
+                      key={method.id}
+                      icon={method.icon}
+                      title={method.title}
+                      description={method.description}
+                      suggested={suggestedRechargeMethod === method.id}
+                      onPress={() => selectRechargeMethod(method.id)}
+                    />
+                  ))}
+                </ActivationMethodsGrid>
+
+                <Text style={[styles.vzSafetyCopy, { color: theme.textMuted }]}>
+                  This tool supports reflection and basic self-care. It does not diagnose the cause
+                  of fatigue.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'pause-setup' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeActiveInner]}>
+                <InternalBack label="Back to recharge tools" onPress={returnToRechargeMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>REAL PAUSE</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Your brain is allowed to stop receiving input.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  A real pause does not have to be productive. Choose the kind of rest that feels
+                  possible right now.
+                </Text>
+                <Text
+                  style={[
+                    styles.cueSupportText,
+                    {
+                      color: theme.textMuted,
+                      textAlign: 'left',
+                      alignSelf: 'stretch',
+                      marginBottom: rcFieldGap,
+                    },
+                  ]}>
+                  Doing nothing for a while is also an option.
+                </Text>
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  What kind of pause feels possible?
+                </Text>
+                <View style={[styles.blockerList, { marginBottom: rcFieldGap }]}>
+                  {PAUSE_OPTIONS.map((option) => (
+                    <PauseTypeRow
+                      key={option.id}
+                      option={option}
+                      selected={selectedPauseId === option.id}
+                      onSelect={() => setSelectedPauseId(option.id)}
+                    />
+                  ))}
+                </View>
+
+                {selectedPauseId === 'custom' ? (
+                  <View style={[styles.taskFieldBlock, { marginBottom: rcFieldGap, marginTop: 0 }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                      Your kind of pause
+                    </Text>
+                    <TextInput
+                      value={customPauseText}
+                      onChangeText={(v) => setCustomPauseText(v.slice(0, TASK_TEXT_MAX))}
+                      placeholder="e.g. rest with a warm drink"
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={TASK_TEXT_MAX}
+                      accessibilityLabel="Custom pause"
+                      returnKeyType="done"
+                      blurOnSubmit
+                      onSubmitEditing={() => {}}
+                      style={[
+                        styles.taskInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                  </View>
+                ) : null}
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  Would a time boundary help?
+                </Text>
+                <View style={styles.durationRow}>
+                  {PAUSE_DURATION_PRESETS.map((mins) => (
+                    <DurationChip
+                      key={mins}
+                      label={`${mins} min`}
+                      selected={pauseHasTimer && !pauseDurationCustom && pauseDuration === mins}
+                      onPress={() => {
+                        setPauseHasTimer(true);
+                        setPauseDurationCustom(false);
+                        setPauseDuration(mins);
+                      }}
+                    />
+                  ))}
+                  <DurationChip
+                    label="Custom"
+                    selected={pauseHasTimer && pauseDurationCustom}
+                    onPress={() => {
+                      setPauseHasTimer(true);
+                      setPauseDurationCustom(true);
+                    }}
+                  />
+                  <DurationChip
+                    label="No timer"
+                    selected={!pauseHasTimer}
+                    onPress={() => {
+                      setPauseHasTimer(false);
+                      setPauseDurationCustom(false);
+                    }}
+                  />
+                </View>
+
+                {pauseHasTimer && pauseDurationCustom ? (
+                  <View style={[styles.taskFieldBlock, { marginBottom: rcFieldGap }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>Custom minutes</Text>
+                    <TextInput
+                      value={pauseCustomMinutes}
+                      onChangeText={(v) =>
+                        setPauseCustomMinutes(sanitizeCustomMinutesInputMax(v, 3))
+                      }
+                      placeholder="e.g. 45"
+                      placeholderTextColor={theme.textMuted}
+                      keyboardType="number-pad"
+                      accessibilityLabel="Custom pause minutes"
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (canStartPause) startPause();
+                      }}
+                      style={[
+                        styles.taskInput,
+                        styles.customDurationInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: pauseCustomErrorText ? theme.accent : theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    {pauseCustomErrorText ? (
+                      <Text style={[styles.validationText, { color: theme.accent }]}>
+                        {pauseCustomErrorText}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                <View style={styles.actionStack}>
+                  <View style={[styles.compactBtn, !canStartPause && styles.continueDisabled]}>
+                    <GradientButton
+                      label={pauseHasTimer ? 'Start my pause' : 'Begin my untimed pause'}
+                      onPress={startPause}
+                      small
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'pause-running' ? (
+            <View style={styles.stageShell}>
+              <View
+                style={[
+                  styles.stageInner,
+                  pauseHasTimer ? styles.timerRunningInner : styles.rechargeActiveInner,
+                ]}>
+                <InternalBack
+                  label="Back to pause setup"
+                  onPress={() => {
+                    setPauseRunKey((key) => key + 1);
+                    setRechargeStage('pause-setup');
+                  }}
+                />
+                {pauseHasTimer ? (
+                  <GentleTimer
+                    key={`recharge-pause-${pauseRunKey}-${pauseDuration}`}
+                    durationMinutes={pauseDuration}
+                    title={`Pause: ${pauseLabel || 'rest'}`}
+                    compact
+                    endLabel="End pause"
+                    pauseLabel="Pause timer"
+                    resumeLabel="Resume timer"
+                    onFinish={() => setRechargeStage('pause-result')}
+                  />
+                ) : (
+                  <GlassCard
+                    style={[
+                      styles.vzStatementCard,
+                      {
+                        backgroundColor: theme.accentTertiary,
+                        borderColor: theme.accent,
+                        marginBottom: rcFieldGap,
+                      },
+                    ]}>
+                    <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                      Your pause has started.
+                    </Text>
+                    <Text
+                      style={[
+                        styles.cueSupportText,
+                        { color: theme.textSecondary, marginTop: spacing.sm },
+                      ]}>
+                      You do not need to watch the clock. Come back to the app whenever you want.
+                    </Text>
+                    <View style={[styles.actionStack, { marginTop: spacing.lg }]}>
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label="I gave myself a real pause"
+                          onPress={() => setRechargeStage('pause-result')}
+                          small
+                        />
+                      </View>
+                      <Pressable
+                        onPress={() => setRechargeStage('pause-setup')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Choose a different kind of pause"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Choose a different kind of pause
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </GlassCard>
+                )}
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'pause-result' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeActiveInner]}>
+                <InternalBack
+                  label="Back to my pause"
+                  onPress={() => setRechargeStage('pause-running')}
+                />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>RECOVERY COUNTS</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  You gave your brain somewhere to land.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: rcFieldGap },
+                  ]}>
+                  This time was not wasted. You reduced the demand for a while.
+                </Text>
+
+                <View style={styles.actionStack}>
+                  {rechargeRewarded ? (
+                    <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                      <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                        Recovery win saved ✓
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.compactBtn}>
+                      <GradientButton
+                        label={`Save this as a recovery win +${RECHARGE_XP} XP`}
+                        onPress={completePauseWin}
+                        small
+                      />
+                    </View>
+                  )}
+                  <GradientButton
+                    label="I need more rest"
+                    onPress={() => setRechargeStage('pause-setup')}
+                    variant="secondary"
+                    small
+                    style={styles.compactBtn}
+                  />
+                  <Pressable
+                    onPress={openLowEnergyFromPause}
+                    accessibilityRole="button"
+                    accessibilityLabel="I'm ready for one small thing"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.quietAction,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      I&apos;m ready for one small thing
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'body-reset' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeActiveInner]}>
+                <InternalBack label="Back to recharge tools" onPress={returnToRechargeMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>BODY FIRST</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Check the system carrying the task.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  Your body is not an obstacle between you and productivity. It is where all of this
+                  is happening.
+                </Text>
+                <Text
+                  style={[
+                    styles.cueSupportText,
+                    {
+                      color: theme.textMuted,
+                      textAlign: 'left',
+                      alignSelf: 'stretch',
+                      marginBottom: rcFieldGap,
+                    },
+                  ]}>
+                  Basic care is still real progress.
+                </Text>
+
+                <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>
+                  {bodyCompletedCount} {bodyCompletedCount === 1 ? 'thing' : 'things'} cared for
+                </Text>
+
+                <View style={[styles.blockerList, { marginBottom: rcFieldGap }]}>
+                  {bodyResetItems.map((item) => (
+                    <RechargeBodyRow
+                      key={item.id}
+                      item={item}
+                      isEditing={bodyEditingId === item.id}
+                      editingText={bodyEditingText}
+                      onEditingTextChange={(text) =>
+                        setBodyEditingText(text.slice(0, TASK_TEXT_MAX))
+                      }
+                      onToggleComplete={() => toggleBodyResetItem(item.id)}
+                      onStartEdit={() => {
+                        setBodyEditingId(item.id);
+                        setBodyEditingText(item.text);
+                      }}
+                      onSaveEdit={saveBodyEdit}
+                      onCancelEdit={() => {
+                        setBodyEditingId(null);
+                        setBodyEditingText('');
+                      }}
+                      onDelete={() => deleteBodyItem(item.id)}
+                    />
+                  ))}
+                  {!showCustomBodyItem ? (
+                    <Pressable
+                      onPress={() => setShowCustomBodyItem(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Add what my body needs"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.customBlockerBtn,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.addStepText, { color: theme.accentSecondary }]}>
+                        + Add what my body needs
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.customBlockerInputRow}>
+                      <TextInput
+                        value={customBodyText}
+                        onChangeText={(v) => setCustomBodyText(v.slice(0, TASK_TEXT_MAX))}
+                        placeholder="What does your body need?"
+                        placeholderTextColor={theme.textMuted}
+                        maxLength={TASK_TEXT_MAX}
+                        accessibilityLabel="Custom body care item"
+                        returnKeyType="done"
+                        onSubmitEditing={submitCustomBodyItem}
+                        autoFocus
+                        style={[
+                          styles.taskInput,
+                          styles.customBlockerInput,
+                          {
+                            color: theme.text,
+                            backgroundColor: theme.surface,
+                            borderColor: theme.surfaceBorder,
+                          },
+                        ]}
+                      />
+                      <View style={styles.customBlockerInputActions}>
+                        <Pressable
+                          onPress={submitCustomBodyItem}
+                          accessibilityRole="button"
+                          accessibilityLabel="Add body care item"
+                          style={[
+                            styles.editSaveBtn,
+                            { backgroundColor: theme.accentSecondary + '44' },
+                          ]}>
+                          <Text style={[styles.editSaveText, { color: theme.text }]}>Add</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setShowCustomBodyItem(false);
+                            setCustomBodyText('');
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel custom body item"
+                          hitSlop={8}
+                          style={styles.editCancelBtn}>
+                          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {bodyCompletedCount > 0 ? (
+                  <View style={styles.actionStack}>
+                    {rechargeRewarded ? (
+                      <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                        <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                          Recovery win saved ✓
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label={`That is enough for now +${RECHARGE_XP} XP`}
+                          onPress={completeBodyResetWin}
+                          small
+                        />
+                      </View>
+                    )}
+                    <Pressable
+                      onPress={clearCompletedBodyItems}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear completed items"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.quietAction,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                        Clear completed items
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'smaller-day' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeActiveInner]}>
+                <InternalBack label="Back to recharge tools" onPress={returnToRechargeMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>MAKE TODAY SMALLER</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Some things can wait.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: rcFieldGap },
+                  ]}>
+                  Protecting your capacity is not giving up. Choose what can shrink, move, or stop
+                  asking for your energy today.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: rcFieldGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    You are allowed to plan around the energy you have.
+                  </Text>
+                </GlassCard>
+
+                <View style={[styles.blockerList, { marginBottom: rcFieldGap }]}>
+                  {smallerDayItems.map((item) => (
+                    <RechargePermissionRow
+                      key={item.id}
+                      item={item}
+                      isEditing={smallerEditingId === item.id}
+                      editingText={smallerEditingText}
+                      onEditingTextChange={(text) =>
+                        setSmallerEditingText(text.slice(0, TASK_TEXT_MAX))
+                      }
+                      onToggle={() => toggleSmallerDayItem(item.id)}
+                      onStartEdit={() => {
+                        setSmallerEditingId(item.id);
+                        setSmallerEditingText(item.text);
+                      }}
+                      onSaveEdit={saveSmallerEdit}
+                      onCancelEdit={() => {
+                        setSmallerEditingId(null);
+                        setSmallerEditingText('');
+                      }}
+                      onDelete={() => deleteSmallerItem(item.id)}
+                    />
+                  ))}
+                  {!showCustomPermission ? (
+                    <Pressable
+                      onPress={() => setShowCustomPermission(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Write my own permission"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.customBlockerBtn,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.addStepText, { color: theme.accentSecondary }]}>
+                        + Write my own permission
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.customBlockerInputRow}>
+                      <TextInput
+                        value={customPermissionText}
+                        onChangeText={(v) => setCustomPermissionText(v.slice(0, TASK_TEXT_MAX))}
+                        placeholder="What are you allowed to do differently?"
+                        placeholderTextColor={theme.textMuted}
+                        maxLength={TASK_TEXT_MAX}
+                        accessibilityLabel="Custom permission"
+                        returnKeyType="done"
+                        onSubmitEditing={submitCustomPermission}
+                        autoFocus
+                        style={[
+                          styles.taskInput,
+                          styles.customBlockerInput,
+                          {
+                            color: theme.text,
+                            backgroundColor: theme.surface,
+                            borderColor: theme.surfaceBorder,
+                          },
+                        ]}
+                      />
+                      <View style={styles.customBlockerInputActions}>
+                        <Pressable
+                          onPress={submitCustomPermission}
+                          accessibilityRole="button"
+                          accessibilityLabel="Add permission"
+                          style={[
+                            styles.editSaveBtn,
+                            { backgroundColor: theme.accentSecondary + '44' },
+                          ]}>
+                          <Text style={[styles.editSaveText, { color: theme.text }]}>Add</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setShowCustomPermission(false);
+                            setCustomPermissionText('');
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel custom permission"
+                          hitSlop={8}
+                          style={styles.editCancelBtn}>
+                          <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {selectedSmallerLabels.length > 0 ? (
+                  <GlassCard style={[styles.boredomSummaryCard, { marginBottom: rcFieldGap }]}>
+                    <Text style={[styles.vzModeLabel, { color: theme.textMuted }]}>
+                      My low-energy plan
+                    </Text>
+                    <Text style={[styles.boredomSummaryText, { color: theme.text }]}>
+                      {smallerDaySummary}
+                    </Text>
+                  </GlassCard>
+                ) : null}
+
+                {selectedSmallerLabels.length > 0 ? (
+                  <View style={styles.actionStack}>
+                    {rechargeRewarded ? (
+                      <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                        <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                          Recovery win saved ✓
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label={`Use this plan today +${RECHARGE_XP} XP`}
+                          onPress={completeSmallerDayWin}
+                          small
+                        />
+                      </View>
+                    )}
+                    <Pressable
+                      onPress={clearSmallerChoices}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear my choices"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.quietAction,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                        Clear my choices
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'low-energy-setup' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeActiveInner]}>
+                <InternalBack label="Back to recharge tools" onPress={returnToRechargeMenu} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>LOW-ENERGY MODE</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  Let&apos;s use the energy you have.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: rcFieldGap },
+                  ]}>
+                  This is for something that truly cannot wait. The goal is not the best result. The
+                  goal is the smallest result that is enough for today.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: rcFieldGap,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                    Work with your capacity instead of fighting it.
+                  </Text>
+                </GlassCard>
+
+                <View style={[styles.taskFieldBlock, { marginBottom: rcFieldGap, marginTop: 0 }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What truly cannot wait?
+                  </Text>
+                  <TextInput
+                    value={lowEnergyTask}
+                    onChangeText={(v) => setLowEnergyTask(v.slice(0, TASK_TEXT_MAX))}
+                    placeholder="e.g. send the file, wash the dishes I need, answer one urgent message"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={TASK_TEXT_MAX}
+                    accessibilityLabel="What truly cannot wait?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => {}}
+                    onFocus={() => setRcInputFocused(true)}
+                    onBlur={() => setRcInputFocused(false)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: rcInputFocused ? theme.accent : theme.surfaceBorder,
+                      },
+                      rcInputFocused && styles.taskInputFocused,
+                    ]}
+                  />
+                </View>
+
+                <View style={[styles.taskFieldBlock, { marginBottom: rcFieldGap, marginTop: 0 }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What would “enough” look like today?
+                  </Text>
+                  <TextInput
+                    value={lowEnergyEnough}
+                    onChangeText={(v) => setLowEnergyEnough(v.slice(0, LOW_ENERGY_ENOUGH_MAX))}
+                    placeholder="e.g. send the rough version, wash five dishes, write one short reply"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={LOW_ENERGY_ENOUGH_MAX}
+                    accessibilityLabel="What would enough look like today?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => {}}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor: theme.surfaceBorder,
+                      },
+                    ]}
+                  />
+                  <View style={styles.exampleRow}>
+                    {LOW_ENERGY_ENOUGH_PRESETS.map((preset) => (
+                      <TagPill
+                        key={preset}
+                        label={preset}
+                        onPress={() => setLowEnergyEnough(preset.slice(0, LOW_ENERGY_ENOUGH_MAX))}
+                      />
+                    ))}
+                  </View>
+                </View>
+
+                {lowEnergyEnough.trim() ? (
+                  <GlassCard style={[styles.boredomSummaryCard, { marginBottom: rcFieldGap }]}>
+                    <Text style={[styles.vzModeLabel, { color: theme.textMuted }]}>
+                      Enough for today
+                    </Text>
+                    <Text style={[styles.boredomSummaryText, { color: theme.text }]}>
+                      {lowEnergyEnough.trim().charAt(0).toUpperCase() +
+                        lowEnergyEnough.trim().slice(1)}
+                      {lowEnergyEnough.trim().endsWith('.') ? '' : '.'}
+                    </Text>
+                    <Text style={[styles.cueSupportText, { color: theme.textSecondary }]}>
+                      Anything beyond this is optional.
+                    </Text>
+                  </GlassCard>
+                ) : null}
+
+                <GlassCard style={[styles.rechargeRulesCard, { marginBottom: rcFieldGap }]}>
+                  <Text style={[styles.vzModeLabel, { color: theme.textMuted }]}>
+                    Low-energy rules
+                  </Text>
+                  <Text style={[styles.rechargeRuleText, { color: theme.textSecondary }]}>
+                    • Choose the smallest acceptable result
+                  </Text>
+                  <Text style={[styles.rechargeRuleText, { color: theme.textSecondary }]}>
+                    • Remove one unnecessary part
+                  </Text>
+                  <Text style={[styles.rechargeRuleText, { color: theme.textSecondary }]}>
+                    • Check in again after one short round
+                  </Text>
+                </GlassCard>
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  Would a short round help?
+                </Text>
+                <View style={styles.durationRow}>
+                  {LOW_ENERGY_DURATION_PRESETS.map((mins) => (
+                    <DurationChip
+                      key={mins}
+                      label={`${mins} min`}
+                      selected={
+                        lowEnergyHasTimer &&
+                        !lowEnergyDurationCustom &&
+                        lowEnergyDuration === mins
+                      }
+                      onPress={() => {
+                        setLowEnergyHasTimer(true);
+                        setLowEnergyDurationCustom(false);
+                        setLowEnergyDuration(mins);
+                      }}
+                    />
+                  ))}
+                  <DurationChip
+                    label="Custom"
+                    selected={lowEnergyHasTimer && lowEnergyDurationCustom}
+                    onPress={() => {
+                      setLowEnergyHasTimer(true);
+                      setLowEnergyDurationCustom(true);
+                    }}
+                  />
+                  <DurationChip
+                    label="No timer"
+                    selected={!lowEnergyHasTimer}
+                    onPress={() => {
+                      setLowEnergyHasTimer(false);
+                      setLowEnergyDurationCustom(false);
+                    }}
+                  />
+                </View>
+
+                {lowEnergyHasTimer && lowEnergyDurationCustom ? (
+                  <View style={[styles.taskFieldBlock, { marginBottom: rcFieldGap }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>Custom minutes</Text>
+                    <TextInput
+                      value={lowEnergyCustomMinutes}
+                      onChangeText={(v) =>
+                        setLowEnergyCustomMinutes(sanitizeCustomMinutesInput(v))
+                      }
+                      placeholder="e.g. 8"
+                      placeholderTextColor={theme.textMuted}
+                      keyboardType="number-pad"
+                      accessibilityLabel="Custom low-energy minutes"
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (canStartLowEnergy) startLowEnergy();
+                      }}
+                      style={[
+                        styles.taskInput,
+                        styles.customDurationInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: lowEnergyCustomErrorText
+                            ? theme.accent
+                            : theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                    {lowEnergyCustomErrorText ? (
+                      <Text style={[styles.validationText, { color: theme.accent }]}>
+                        {lowEnergyCustomErrorText}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                <View style={styles.actionStack}>
+                  <View style={[styles.compactBtn, !canStartLowEnergy && styles.continueDisabled]}>
+                    <GradientButton
+                      label={lowEnergyHasTimer ? 'Start low-energy mode' : 'Begin with enough'}
+                      onPress={startLowEnergy}
+                      small
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'low-energy-running' ? (
+            <View style={styles.stageShell}>
+              <View
+                style={[
+                  styles.stageInner,
+                  lowEnergyHasTimer ? styles.timerRunningInner : styles.rechargeActiveInner,
+                ]}>
+                <InternalBack
+                  label="Back to low-energy setup"
+                  onPress={() => {
+                    setLowEnergyRunKey((key) => key + 1);
+                    setRechargeStage('low-energy-setup');
+                  }}
+                />
+                {lowEnergyHasTimer ? (
+                  <GentleTimer
+                    key={`recharge-low-${lowEnergyRunKey}-${lowEnergyDuration}`}
+                    durationMinutes={lowEnergyDuration}
+                    title={`Enough for today: ${lowEnergyEnough.trim() || 'enough'}`}
+                    compact
+                    endLabel="End round"
+                    pauseLabel="Pause timer"
+                    resumeLabel="Resume timer"
+                    onFinish={() => setRechargeStage('low-energy-result')}
+                  />
+                ) : (
+                  <GlassCard
+                    style={[
+                      styles.vzStatementCard,
+                      {
+                        backgroundColor: theme.accentTertiary,
+                        borderColor: theme.accent,
+                        marginBottom: rcFieldGap,
+                      },
+                    ]}>
+                    <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                      Your only goal is: {lowEnergyEnough.trim()}
+                    </Text>
+                    <View style={[styles.actionStack, { marginTop: spacing.lg }]}>
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label="I did enough for now"
+                          onPress={() => setRechargeStage('low-energy-result')}
+                          small
+                        />
+                      </View>
+                      <Pressable
+                        onPress={() => setRechargeStage('low-energy-setup')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Change what enough means"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Change what enough means
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </GlassCard>
+                )}
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'low-energy-result' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeActiveInner]}>
+                <InternalBack
+                  label="Back to low-energy mode"
+                  onPress={() => setRechargeStage('low-energy-running')}
+                />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>ENOUGH IS ENOUGH</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>
+                  You worked with the capacity you had.
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: rcFieldGap },
+                  ]}>
+                  You did not need unlimited energy to move one necessary thing forward.
+                </Text>
+
+                <View style={styles.actionStack}>
+                  {rechargeRewarded ? (
+                    <View style={[styles.compactBtn, styles.vzCompletedBtn]}>
+                      <Text style={[styles.vzCompletedText, { color: theme.textSecondary }]}>
+                        Recovery win saved ✓
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.compactBtn}>
+                      <GradientButton
+                        label={`Save this as a tiny win +${RECHARGE_XP} XP`}
+                        onPress={completeLowEnergyWin}
+                        small
+                      />
+                    </View>
+                  )}
+                  <GradientButton
+                    label="Do one more short round"
+                    onPress={restartLowEnergyRound}
+                    variant="secondary"
+                    small
+                    style={styles.compactBtn}
+                  />
+                  <Pressable
+                    onPress={returnToRechargeMenu}
+                    accessibilityRole="button"
+                    accessibilityLabel="That is enough for today"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.quietAction,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                      That is enough for today
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {isRechargeFlow && rechargeStage === 'complete' && rechargeCompletionCopy ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.rechargeCompleteInner]}>
+                <InternalBack
+                  label="Back to my recharge tool"
+                  onPress={backFromRechargeComplete}
+                />
+                <GlassCard style={styles.successCard}>
+                  <Text style={styles.vzCompleteBadge} accessibilityLabel="Recovery">
+                    🌙
+                  </Text>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>
+                    {rechargeCompletionCopy.headline}
+                  </Text>
+                  <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                    {rechargeCompletionCopy.body}
+                  </Text>
+                  <View style={styles.sessionStats}>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      1 recovery strategy used
+                    </Text>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      +{rechargeXpEarned} XP earned
+                    </Text>
+                    <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
+                      Your garden grows from rest and self-care too.
+                    </Text>
+                  </View>
+                  <View style={styles.successActions}>
+                    <View style={styles.successBtn}>
+                      <GradientButton
+                        label="Back to dashboard"
+                        onPress={() => router.push('/dashboard' as never)}
+                        small
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.successLinks}>
+                    <Pressable
+                      onPress={tryAnotherRechargeTool}
+                      accessibilityRole="button"
+                      accessibilityLabel="Try another recharge tool"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Try another recharge tool
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push('/garden' as never)}
+                      accessibilityRole="link"
+                      accessibilityLabel="Check out your garden"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.accentSecondary }]}>
+                        Check out your garden
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={returnToStuckTypes}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose another stuck type"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Choose another stuck type
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
           {showLegacyQuestStage ? (
             <>
               <Text style={[styles.headline, { color: theme.text }]}>Starting is a task too.</Text>
@@ -5172,6 +7106,27 @@ const styles = StyleSheet.create({
     ...typography.body,
     lineHeight: 24,
     fontWeight: '600',
+  },
+  rechargeMenuInner: {
+    maxWidth: RECHARGE_MENU_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  rechargeActiveInner: {
+    maxWidth: RECHARGE_ACTIVE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  rechargeCompleteInner: {
+    maxWidth: RECHARGE_COMPLETE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  rechargeRulesCard: {
+    width: '100%',
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  rechargeRuleText: {
+    ...typography.bodySmall,
+    lineHeight: 20,
   },
   boringTaxRow: {
     flexDirection: 'row',
