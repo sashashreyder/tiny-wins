@@ -92,13 +92,13 @@ export const stuckTypes: StuckTypeOption[] = [
     id: 'opened-everything',
     label: 'I opened everything and did nothing',
     emoji: '🌀',
-    hint: 'Lots of tabs, zero traction.',
+    hint: 'Too many things are active at once.',
   },
   {
     id: 'forgot-what',
     label: 'I forgot what I was doing',
     emoji: '💭',
-    hint: 'The thread slipped away mid-task.',
+    hint: 'The thread disappeared mid-task.',
   },
 ];
 

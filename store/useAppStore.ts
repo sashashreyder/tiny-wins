@@ -11,6 +11,7 @@ import {
 import {
   AppState,
   BrainDumpEntry,
+  ComebackNote,
   FocusResult,
   FocusSession,
   MoodEntry,
@@ -36,6 +37,9 @@ interface AppActions {
   addSleep: (entry: Omit<SleepEntry, 'id' | 'createdAt'>) => void;
   addWater: (amount?: number) => void;
   addBrainDump: (entry: Omit<BrainDumpEntry, 'id' | 'createdAt'>) => void;
+  addParkedThoughts: (texts: string[]) => number;
+  setComebackNote: (note: ComebackNote) => void;
+  clearComebackNote: () => void;
   completeFocus: (session: Omit<FocusSession, 'id' | 'createdAt' | 'xp'>, result: FocusResult) => void;
   toggleSelfCare: (label: string) => void;
   toggleHomeTask: (zone: string, label: string) => void;
@@ -196,6 +200,36 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ brainDumpEntries: [...s.brainDumpEntries, dump] }));
       },
 
+      addParkedThoughts: (texts) => {
+        const existing = new Set(
+          get().brainDumpEntries.flatMap((entry) =>
+            entry.text
+              .split(/[\n,;]+/)
+              .map((piece) => piece.trim().toLowerCase())
+              .filter(Boolean),
+          ),
+        );
+        const unique = texts
+          .map((text) => text.trim())
+          .filter((text) => text.length > 0 && !existing.has(text.toLowerCase()));
+        if (unique.length === 0) return 0;
+
+        const createdAt = new Date().toISOString();
+        const dump: BrainDumpEntry = {
+          id: `dump-${Date.now()}`,
+          mode: 'idea-parking',
+          text: unique.join('\n'),
+          tags: [],
+          createdAt,
+        };
+        set((s) => ({ brainDumpEntries: [...s.brainDumpEntries, dump] }));
+        return unique.length;
+      },
+
+      setComebackNote: (note) => set({ latestComebackNote: note }),
+
+      clearComebackNote: () => set({ latestComebackNote: null }),
+
       completeFocus: (session, result) => {
         const xp = getFocusXP(session.duration);
         const full: FocusSession = {
@@ -329,6 +363,9 @@ export const useAppStore = create<AppStore>()(
             ...merged.userProfile,
             supportStyles: [merged.userProfile.supportStyle],
           };
+        }
+        if (merged.latestComebackNote === undefined) {
+          merged.latestComebackNote = null;
         }
         return merged;
       },

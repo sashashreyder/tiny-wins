@@ -60,6 +60,30 @@ import {
   formatStopwatchTime,
 } from '@/data/messageLoop';
 import {
+  ATTENTION_DEADLINE_MAX,
+  ATTENTION_ITEM_CHAR_MAX,
+  ATTENTION_PRIORITIES,
+  AttentionPriority,
+  AttentionTask,
+  QUICK_RESET_ITEMS,
+  buildAttentionWinTitle,
+  canAddAttentionTask,
+  makeAttentionTask,
+} from '@/data/attentionReset';
+import {
+  THREAD_CONTEXT_MAX,
+  THREAD_CONTEXT_OPTIONS,
+  THREAD_MEMORY_MAX,
+  THREAD_NOTE_MAX,
+  THREAD_TEXT_MAX,
+  ThreadContextKind,
+  buildFutureNoteDraft,
+  buildThreadWinTitle,
+  formatComebackTimestamp,
+  getThreadContextLabel,
+  getThreadSuggestions,
+} from '@/data/threadRecovery';
+import {
   LOW_ENERGY_DURATION_PRESETS,
   LOW_ENERGY_ENOUGH_PRESETS,
   PAUSE_DURATION_PRESETS,
@@ -104,15 +128,19 @@ const CHECKLIST_DESKTOP_MAX_WIDTH = 860;
 const CHECKLIST_NARROW_BREAKPOINT = 900;
 const SUCCESS_DESKTOP_MAX_WIDTH = 820;
 const TASK_TEXT_MAX = 100;
+const MESSAGE_CONTEXT_MAX = 60;
 const CHECKLIST_MAX = 6;
 const REPLY_DRAFT_MAX = 1000;
 const UNSENT_DRAFT_MAX = 2000;
+const QUICK_CLOSE_CUSTOM_PRESET = 'Write my own finish line';
 const STEP_XP = calculateXP('tiny-win');
 const NO_BEGINNING_XP = calculateXP('tiny-win');
 const VERSION_ZERO_XP = calculateXP('tiny-win');
 const BOREDOM_XP = calculateXP('tiny-win');
 const RECHARGE_XP = calculateXP('tiny-win');
 const MESSAGE_LOOP_XP = calculateXP('tiny-win');
+const ATTENTION_RESET_XP = calculateXP('tiny-win');
+const THREAD_XP = calculateXP('tiny-win');
 const VERSION_ZERO_MENU_MAX_WIDTH = 960;
 const VERSION_ZERO_ACTIVE_MAX_WIDTH = 880;
 const VERSION_ZERO_COMPLETE_MAX_WIDTH = 790;
@@ -123,8 +151,13 @@ const RECHARGE_MENU_MAX_WIDTH = 1000;
 const RECHARGE_ACTIVE_MAX_WIDTH = 880;
 const RECHARGE_COMPLETE_MAX_WIDTH = 790;
 const MESSAGE_LOOP_MENU_MAX_WIDTH = 1000;
-const MESSAGE_LOOP_ACTIVE_MAX_WIDTH = 880;
+const MESSAGE_LOOP_ACTIVE_MAX_WIDTH = 960;
 const MESSAGE_LOOP_COMPLETE_MAX_WIDTH = 790;
+const ATTENTION_RESET_MAX_WIDTH = 960;
+const ATTENTION_RESET_COMPLETE_MAX_WIDTH = 790;
+const THREAD_RECOVERY_MAX_WIDTH = 860;
+const THREAD_RECOVERY_COMPLETE_MAX_WIDTH = 790;
+const MESSAGE_LOOP_STOPWATCH_BTN_MAX = 320;
 const TIMER_PRESETS = [2, 5, 10] as const;
 const CUE_DURATION_PRESETS = [2, 5, 10] as const;
 const BREAK_DURATION_PRESETS = [5, 10, 15] as const;
@@ -1058,36 +1091,51 @@ function MessageChoiceCard({
   description,
   selected,
   onPress,
+  wide,
 }: {
   title: string;
   description: string;
   selected?: boolean;
   onPress: () => void;
+  wide?: boolean;
 }) {
   const theme = useAppTheme();
+  const isSelected = Boolean(selected);
+  const titleColor = isSelected ? theme.selectedForeground : theme.text;
+  const descColor = isSelected ? theme.selectedForegroundMuted : theme.textSecondary;
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityState={{ selected: Boolean(selected) }}
+      accessibilityState={{ selected: isSelected }}
       accessibilityLabel={title}
       style={({ pressed, focused }: PressableFocusState) => [
         styles.methodCardPressable,
+        wide ? styles.messageChoiceWide : null,
         pressed && styles.pressed,
         focused && Platform.OS === 'web' ? styles.focusRing : null,
       ]}>
       <View
         style={[
-          styles.methodCard,
+          styles.messageChoiceCard,
           {
-            backgroundColor: selected ? theme.accentTertiary : theme.surface,
-            borderColor: selected ? theme.accent : theme.surfaceBorder,
-            borderWidth: selected ? 2 : 1,
+            backgroundColor: isSelected ? theme.accentTertiary : theme.surface,
+            borderColor: isSelected ? theme.accent : theme.surfaceBorder,
+            borderWidth: isSelected ? 2 : 1,
           },
         ]}>
-        <Text style={[styles.methodTitle, { color: theme.text }]}>{title}</Text>
-        <Text style={[styles.methodDesc, { color: theme.textSecondary }]}>{description}</Text>
+        <View style={styles.messageChoiceHeader}>
+          <Text style={[styles.messageChoiceTitle, { color: titleColor, flex: 1 }]}>{title}</Text>
+          {isSelected ? (
+            <Text
+              style={[styles.messageChoiceCheck, { color: theme.selectedForeground }]}
+              accessibilityLabel="Selected">
+              ✓
+            </Text>
+          ) : null}
+        </View>
+        <Text style={[styles.messageChoiceDesc, { color: descColor }]}>{description}</Text>
       </View>
     </Pressable>
   );
@@ -1103,6 +1151,7 @@ function MessageOptionChip({
   onPress: () => void;
 }) {
   const theme = useAppTheme();
+  const labelColor = selected ? theme.selectedForeground : theme.textSecondary;
 
   return (
     <Pressable
@@ -1115,16 +1164,566 @@ function MessageOptionChip({
         {
           backgroundColor: selected ? theme.accentTertiary : theme.surface,
           borderColor: selected ? theme.accent : theme.surfaceBorder,
+          borderWidth: selected ? 2 : 1.5,
         },
         pressed && styles.pressed,
         focused && Platform.OS === 'web' ? styles.focusRing : null,
       ]}>
-      <Text
+      <Text style={[styles.durationChipText, { color: labelColor }]}>
+        {selected ? `✓ ${label}` : label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function AttentionCardsGrid({
+  children,
+  columns,
+  gap,
+}: {
+  children: React.ReactNode[];
+  columns: number;
+  gap: number;
+}) {
+  const rows = chunk(children, columns);
+
+  return (
+    <View style={[styles.methodGrid, { gap }]}>
+      {rows.map((row, rowIndex) => (
+        <View key={`attention-row-${rowIndex}`} style={[styles.methodRow, { gap }]}>
+          {row.map((child, colIndex) => (
+            <View key={`attention-cell-${rowIndex}-${colIndex}`} style={styles.methodCell}>
+              {child}
+            </View>
+          ))}
+          {row.length < columns
+            ? Array.from({ length: columns - row.length }).map((_, i) => (
+                <View key={`attention-spacer-${rowIndex}-${i}`} style={styles.methodCell} />
+              ))
+            : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AttentionPriorityChips({
+  value,
+  onChange,
+  compact,
+}: {
+  value: AttentionPriority;
+  onChange: (priority: AttentionPriority) => void;
+  compact?: boolean;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <View style={styles.attentionPriorityRow}>
+      {ATTENTION_PRIORITIES.map((option) => {
+        const selected = value === option.id;
+        return (
+          <Pressable
+            key={option.id}
+            onPress={() => onChange(option.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            accessibilityLabel={`${option.label} priority`}
+            style={({ pressed, focused }: PressableFocusState) => [
+              compact ? styles.attentionPriorityChipSm : styles.attentionPriorityChip,
+              {
+                backgroundColor: selected ? theme.accentTertiary : theme.surface,
+                borderColor: selected ? theme.accent : theme.surfaceBorder,
+                borderWidth: selected ? 2 : 1,
+              },
+              pressed && styles.pressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text
+              style={[
+                compact ? styles.attentionPriorityChipSmText : styles.attentionPriorityChipText,
+                { color: selected ? theme.selectedForeground : theme.textSecondary },
+              ]}>
+              {selected ? `✓ ${option.label}` : option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function AttentionTaskCard({
+  task,
+  active,
+  parked,
+  editing,
+  editTitle,
+  editDeadline,
+  onEditTitleChange,
+  onEditDeadlineChange,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onPriorityChange,
+  onMakeActive,
+  onMarkDone,
+  onRestore,
+  onDelete,
+}: {
+  task: AttentionTask;
+  active: boolean;
+  parked: boolean;
+  editing: boolean;
+  editTitle: string;
+  editDeadline: string;
+  onEditTitleChange: (value: string) => void;
+  onEditDeadlineChange: (value: string) => void;
+  onStartEdit: () => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onPriorityChange: (priority: AttentionPriority) => void;
+  onMakeActive: () => void;
+  onMarkDone: () => void;
+  onRestore: () => void;
+  onDelete: () => void;
+}) {
+  const theme = useAppTheme();
+  const titleColor = active ? theme.selectedForeground : task.completed ? theme.textMuted : theme.text;
+  const actionColor = active ? theme.selectedForeground : theme.accent;
+
+  return (
+    <View
+      style={[
+        styles.attentionTaskCard,
+        {
+          backgroundColor: active ? theme.accentTertiary : theme.surface,
+          borderColor: active ? theme.accent : theme.surfaceBorder,
+          borderWidth: active ? 2 : 1,
+          opacity: task.completed ? 0.78 : parked ? 0.92 : 1,
+        },
+      ]}>
+      <View style={styles.attentionTaskCardTop}>
+        {active ? (
+          <Text style={[styles.attentionActiveBadge, { color: theme.selectedForeground }]}>
+            ★ ACTIVE NOW
+          </Text>
+        ) : null}
+        {parked && !task.completed ? (
+          <Text style={[styles.attentionDoneBadge, { color: theme.textMuted }]}>PARKED FOR LATER</Text>
+        ) : null}
+        {task.completed ? (
+          <Text style={[styles.attentionDoneBadge, { color: theme.textMuted }]}>✓ DONE</Text>
+        ) : null}
+        <View style={styles.attentionTaskCardActions}>
+          {!task.completed ? (
+            <Pressable
+              onPress={onStartEdit}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit: ${task.title}`}
+              hitSlop={8}
+              style={({ pressed, focused }: PressableFocusState) => [
+                styles.rowIconBtn,
+                { backgroundColor: theme.accent + '18' },
+                pressed && styles.rowIconBtnPressed,
+                focused && Platform.OS === 'web' ? styles.focusRing : null,
+              ]}>
+              <Text style={[styles.rowEditIcon, { color: theme.accent }]}>✎</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={onDelete}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete: ${task.title}`}
+            hitSlop={8}
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.rowIconBtn,
+              { backgroundColor: theme.accent + '18' },
+              pressed && styles.rowIconBtnPressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.rowDeleteIcon, { color: theme.accent }]}>🗑</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {editing && !task.completed ? (
+        <View style={styles.attentionTaskEdit}>
+          <TextInput
+            value={editTitle}
+            onChangeText={onEditTitleChange}
+            placeholder="Task name"
+            placeholderTextColor={theme.textMuted}
+            maxLength={ATTENTION_ITEM_CHAR_MAX}
+            accessibilityLabel="Edit task name"
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={onSaveEdit}
+            style={[
+              styles.taskInput,
+              {
+                color: theme.text,
+                backgroundColor: theme.background,
+                borderColor: theme.accent,
+              },
+            ]}
+          />
+          <TextInput
+            value={editDeadline}
+            onChangeText={onEditDeadlineChange}
+            placeholder="Deadline (optional)"
+            placeholderTextColor={theme.textMuted}
+            maxLength={ATTENTION_DEADLINE_MAX}
+            accessibilityLabel="Edit deadline"
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={onSaveEdit}
+            style={[
+              styles.taskInput,
+              {
+                color: theme.text,
+                backgroundColor: theme.background,
+                borderColor: theme.surfaceBorder,
+              },
+            ]}
+          />
+          <View style={styles.attentionTaskEditActions}>
+            <Pressable
+              onPress={onSaveEdit}
+              accessibilityRole="button"
+              accessibilityLabel="Save task edits"
+              style={({ pressed, focused }: PressableFocusState) => [
+                styles.editSaveBtn,
+                { backgroundColor: theme.accent },
+                pressed && styles.pressed,
+                focused && Platform.OS === 'web' ? styles.focusRing : null,
+              ]}>
+              <Text style={[styles.editSaveText, { color: theme.text }]}>Save</Text>
+            </Pressable>
+            <Pressable
+              onPress={onCancelEdit}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel editing"
+              style={({ pressed, focused }: PressableFocusState) => [
+                styles.editCancelBtn,
+                pressed && styles.pressed,
+                focused && Platform.OS === 'web' ? styles.focusRing : null,
+              ]}>
+              <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <Pressable
+          onPress={task.completed ? undefined : active ? undefined : onMakeActive}
+          accessibilityRole={task.completed || active ? 'none' : 'button'}
+          accessibilityState={{ selected: active }}
+          accessibilityLabel={
+            task.completed
+              ? task.title
+              : active
+                ? `${task.title}, active now`
+                : `Make active: ${task.title}`
+          }
+          disabled={task.completed || active}
+          style={({ pressed, focused }: PressableFocusState) => [
+            !task.completed && !active && pressed ? styles.pressed : null,
+            !task.completed && !active && focused && Platform.OS === 'web' ? styles.focusRing : null,
+          ]}>
+          <Text
+            style={[
+              styles.attentionTaskTitle,
+              {
+                color: titleColor,
+                textDecorationLine: task.completed ? 'line-through' : 'none',
+              },
+            ]}
+            numberOfLines={3}>
+            {task.completed ? `✓ ${task.title}` : active ? `★ ${task.title}` : task.title}
+          </Text>
+        </Pressable>
+      )}
+
+      {!task.completed ? (
+        <AttentionPriorityChips value={task.priority} onChange={onPriorityChange} compact />
+      ) : (
+        <Text style={[styles.attentionMetaText, { color: theme.textMuted }]}>
+          {ATTENTION_PRIORITIES.find((option) => option.id === task.priority)?.label}
+          {task.deadline ? ` · ${task.deadline}` : ''}
+        </Text>
+      )}
+
+      {!editing && task.deadline && !task.completed ? (
+        <Text style={[styles.attentionMetaText, { color: active ? theme.selectedForegroundMuted : theme.textMuted }]}>
+          Deadline: {task.deadline}
+        </Text>
+      ) : null}
+
+      {active ? (
+        <Text style={[styles.attentionActiveSupport, { color: theme.selectedForegroundMuted }]}>
+          This is the only task that needs your attention right now.
+        </Text>
+      ) : null}
+
+      <View style={styles.attentionTaskFooter}>
+        {task.completed ? (
+          <Pressable
+            onPress={onRestore}
+            accessibilityRole="button"
+            accessibilityLabel={`Restore: ${task.title}`}
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.attentionKeepActive,
+              pressed && styles.pressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.attentionKeepText, { color: theme.textMuted }]}>Restore</Text>
+          </Pressable>
+        ) : active ? (
+          <Pressable
+            onPress={onMarkDone}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: false }}
+            accessibilityLabel={`Mark done: ${task.title}`}
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.attentionMarkDone,
+              {
+                backgroundColor: theme.accent,
+              },
+              pressed && styles.pressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.attentionMarkDoneText, { color: theme.text }]}>✓ Mark done</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={onMakeActive}
+            accessibilityRole="button"
+            accessibilityLabel={`Make active: ${task.title}`}
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.attentionKeepActive,
+              pressed && styles.pressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.attentionKeepIcon, { color: actionColor }]}>○</Text>
+            <Text style={[styles.attentionKeepText, { color: actionColor }]}>Make active</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function AttentionComposer({
+  title,
+  onTitleChange,
+  priority,
+  onPriorityChange,
+  deadline,
+  onDeadlineChange,
+  onSubmit,
+  inputRef,
+  titleFocused,
+  deadlineFocused,
+  onTitleFocus,
+  onDeadlineFocus,
+  onBlur,
+  feedback,
+}: {
+  title: string;
+  onTitleChange: (value: string) => void;
+  priority: AttentionPriority;
+  onPriorityChange: (priority: AttentionPriority) => void;
+  deadline: string;
+  onDeadlineChange: (value: string) => void;
+  onSubmit: () => void;
+  inputRef: React.RefObject<TextInput | null>;
+  titleFocused: boolean;
+  deadlineFocused: boolean;
+  onTitleFocus: () => void;
+  onDeadlineFocus: () => void;
+  onBlur: () => void;
+  feedback: string;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <View style={styles.attentionComposer}>
+      <Text style={[styles.taskFieldLabel, { color: theme.text }]}>Task</Text>
+      <View style={styles.attentionComposerRow}>
+        <TextInput
+          ref={inputRef}
+          value={title}
+          onChangeText={onTitleChange}
+          placeholder="e.g. Finish presentation"
+          placeholderTextColor={theme.textMuted}
+          maxLength={ATTENTION_ITEM_CHAR_MAX}
+          accessibilityLabel="Task"
+          returnKeyType="done"
+          blurOnSubmit={false}
+          onSubmitEditing={onSubmit}
+          onFocus={onTitleFocus}
+          onBlur={onBlur}
+          style={[
+            styles.taskInput,
+            styles.attentionComposerInput,
+            {
+              color: theme.text,
+              backgroundColor: theme.surface,
+              borderColor: titleFocused ? theme.accent : theme.surfaceBorder,
+            },
+            titleFocused && styles.taskInputFocused,
+          ]}
+          {...(Platform.OS === 'web'
+            ? ({
+                onKeyDown: (event: {
+                  key: string;
+                  shiftKey?: boolean;
+                  preventDefault: () => void;
+                }) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    onSubmit();
+                  }
+                },
+              } as object)
+            : null)}
+        />
+      </View>
+
+      <Text style={[styles.taskFieldLabel, { color: theme.text, marginTop: spacing.sm }]}>
+        Priority
+      </Text>
+      <AttentionPriorityChips value={priority} onChange={onPriorityChange} />
+
+      <Text style={[styles.taskFieldLabel, { color: theme.text, marginTop: spacing.sm }]}>
+        Deadline (optional)
+      </Text>
+      <TextInput
+        value={deadline}
+        onChangeText={onDeadlineChange}
+        placeholder="e.g. today, Friday, Aug 28"
+        placeholderTextColor={theme.textMuted}
+        maxLength={ATTENTION_DEADLINE_MAX}
+        accessibilityLabel="Deadline (optional)"
+        returnKeyType="done"
+        blurOnSubmit
+        onSubmitEditing={onSubmit}
+        onFocus={onDeadlineFocus}
+        onBlur={onBlur}
         style={[
-          styles.durationChipText,
-          { color: selected ? theme.text : theme.textSecondary },
-        ]}>
-        {label}
+          styles.taskInput,
+          {
+            color: theme.text,
+            backgroundColor: theme.surface,
+            borderColor: deadlineFocused ? theme.accent : theme.surfaceBorder,
+          },
+          deadlineFocused && styles.taskInputFocused,
+        ]}
+      />
+
+      <View style={[styles.attentionComposerRow, { marginTop: spacing.sm }]}>
+        <Pressable
+          onPress={onSubmit}
+          accessibilityRole="button"
+          accessibilityLabel="Add task"
+          style={({ pressed, focused }: PressableFocusState) => [
+            styles.attentionAddBtn,
+            {
+              backgroundColor: theme.accentTertiary,
+              borderColor: theme.accent,
+            },
+            pressed && styles.pressed,
+            focused && Platform.OS === 'web' ? styles.focusRing : null,
+          ]}>
+          <Text style={[styles.attentionAddBtnText, { color: theme.onLightAccent }]}>Add task</Text>
+        </Pressable>
+      </View>
+      {feedback ? (
+        <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>{feedback}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function QuietCheckRow({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  const theme = useAppTheme();
+  const labelColor = checked ? theme.selectedForeground : theme.text;
+
+  return (
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      accessibilityLabel={label}
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.boringTaxRow,
+        {
+          backgroundColor: checked ? theme.accentTertiary : theme.surface,
+          borderColor: checked ? theme.accent : theme.surfaceBorder,
+        },
+        pressed && styles.pressed,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
+      <View style={styles.boringTaxMain}>
+        <View
+          style={[
+            styles.checkbox,
+            {
+              borderColor: checked ? theme.accent : theme.surfaceBorder,
+              backgroundColor: checked ? theme.accent : 'transparent',
+            },
+          ]}>
+          {checked ? (
+            <Text style={{ color: theme.selectedForeground, fontWeight: '700' }}>✓</Text>
+          ) : null}
+        </View>
+        <Text style={[styles.boringTaxLabel, { color: labelColor }]}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function ThreadContextChip({
+  emoji,
+  label,
+  selected,
+  onPress,
+}: {
+  emoji: string;
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+  const labelColor = selected ? theme.selectedForeground : theme.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={label}
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.threadContextChip,
+        {
+          backgroundColor: selected ? theme.accentTertiary : theme.surface,
+          borderColor: selected ? theme.accent : theme.surfaceBorder,
+          borderWidth: selected ? 2 : 1,
+        },
+        pressed && styles.pressed,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
+      <Text style={styles.threadContextEmoji}>{emoji}</Text>
+      <Text style={[styles.threadContextChipText, { color: labelColor }]}>
+        {selected ? `✓ ${label}` : label}
       </Text>
     </Pressable>
   );
@@ -1803,6 +2402,10 @@ export default function CantStartScreen() {
   const completeQuest = useAppStore((s) => s.completeCantStartQuest);
   const addTinyWin = useAppStore((s) => s.addTinyWin);
   const markAchievementEvent = useAppStore((s) => s.markAchievementEvent);
+  const addParkedThoughts = useAppStore((s) => s.addParkedThoughts);
+  const latestComebackNote = useAppStore((s) => s.latestComebackNote);
+  const setComebackNote = useAppStore((s) => s.setComebackNote);
+  const clearComebackNote = useAppStore((s) => s.clearComebackNote);
   const profile = useAppStore((s) => s.userProfile);
 
   const [stuckType, setStuckType] = useState<StuckType | null>(null);
@@ -1931,8 +2534,11 @@ export default function CantStartScreen() {
 
   const [messageStage, setMessageStage] = useState<MessageLoopStage>('menu');
   const [messageMethod, setMessageMethod] = useState<MessageLoopMethod | null>(null);
+  const [messageContextDraft, setMessageContextDraft] = useState('');
   const [messageContext, setMessageContext] = useState('');
-  const [quickCloseGoal, setQuickCloseGoal] = useState('');
+  const [messageContextConfirmed, setMessageContextConfirmed] = useState(false);
+  const [quickClosePreset, setQuickClosePreset] = useState<string | null>(null);
+  const [quickCloseCustomGoal, setQuickCloseCustomGoal] = useState('');
   const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
   const [stopwatchRunKey, setStopwatchRunKey] = useState(0);
   const [replyIntent, setReplyIntent] = useState<ReplyIntent | null>(null);
@@ -1950,6 +2556,46 @@ export default function CantStartScreen() {
   const [mlInputFocused, setMlInputFocused] = useState(false);
   const messageRewardingRef = useRef(false);
   const messageStageRef = useRef<MessageLoopStage>('menu');
+  const cantStartScrollRef = useRef<ScrollView>(null);
+  const threadSectionYRef = useRef(0);
+
+  const [attentionStage, setAttentionStage] = useState<'reset' | 'complete'>('reset');
+  const [attentionTasks, setAttentionTasks] = useState<AttentionTask[]>([]);
+  const [attentionActiveId, setAttentionActiveId] = useState<string | null>(null);
+  const [attentionTitle, setAttentionTitle] = useState('');
+  const [attentionPriority, setAttentionPriority] = useState<AttentionPriority>('medium');
+  const [attentionDeadline, setAttentionDeadline] = useState('');
+  const [attentionFeedback, setAttentionFeedback] = useState('');
+  const [attentionEditingId, setAttentionEditingId] = useState<string | null>(null);
+  const [attentionEditTitle, setAttentionEditTitle] = useState('');
+  const [attentionEditDeadline, setAttentionEditDeadline] = useState('');
+  const [attentionJustFinished, setAttentionJustFinished] = useState(false);
+  const [saveParkedToBrainDump, setSaveParkedToBrainDump] = useState(true);
+  const [brainDumpSaved, setBrainDumpSaved] = useState(false);
+  const [showQuickReset, setShowQuickReset] = useState(false);
+  const [quickResetChecked, setQuickResetChecked] = useState<boolean[]>(() =>
+    QUICK_RESET_ITEMS.map(() => false),
+  );
+  const [attentionRewarded, setAttentionRewarded] = useState(false);
+  const [attentionXpEarned, setAttentionXpEarned] = useState(0);
+  const [arFocusedField, setArFocusedField] = useState<'title' | 'deadline' | null>(null);
+  const attentionRewardingRef = useRef(false);
+  const attentionInputRef = useRef<TextInput>(null);
+
+  const [threadStage, setThreadStage] = useState<'find' | 'complete'>('find');
+  const [threadContextKind, setThreadContextKind] = useState<ThreadContextKind | null>(null);
+  const [threadContextText, setThreadContextText] = useState('');
+  const [threadLastMemory, setThreadLastMemory] = useState('');
+  const [threadIntent, setThreadIntent] = useState('');
+  const [threadText, setThreadText] = useState('');
+  const [futureNoteDraft, setFutureNoteDraft] = useState('');
+  const [clueSaved, setClueSaved] = useState(false);
+  const [futureNoteSkipped, setFutureNoteSkipped] = useState(false);
+  const [threadRewarded, setThreadRewarded] = useState(false);
+  const [threadXpEarned, setThreadXpEarned] = useState(0);
+  const [trFocusedField, setTrFocusedField] = useState<string | null>(null);
+  const threadRewardingRef = useRef(false);
+  const threadInputRef = useRef<TextInput>(null);
 
   const isTooBigFlow = stuckType === 'too-big';
   const isNoBeginningFlow = stuckType === 'no-beginning';
@@ -1957,6 +2603,8 @@ export default function CantStartScreen() {
   const isBoredomFlow = stuckType === 'bored';
   const isRechargeFlow = stuckType === 'tired';
   const isMessageLoopFlow = stuckType === 'avoiding-message';
+  const isAttentionResetFlow = stuckType === 'opened-everything';
+  const isThreadRecoveryFlow = stuckType === 'forgot-what';
   const showContextStage = isTooBigFlow && tooBigStage === 'context';
   const showLegacyQuestStage =
     Boolean(stuckType) &&
@@ -1965,7 +2613,9 @@ export default function CantStartScreen() {
     !isVersionZeroFlow &&
     !isBoredomFlow &&
     !isRechargeFlow &&
-    !isMessageLoopFlow;
+    !isMessageLoopFlow &&
+    !isAttentionResetFlow &&
+    !isThreadRecoveryFlow;
   const suggestedContextOption = taskContextOptions.find((o) => o.id === suggestedContext);
 
   const flowTemplate = confirmedContext ? taskFlowTemplates[confirmedContext] : null;
@@ -1981,6 +2631,8 @@ export default function CantStartScreen() {
   const boredomMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const rechargeMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const messageMethodColumns = viewportWidth >= 768 ? 2 : 1;
+  const attentionCardColumns = viewportWidth >= 700 ? 2 : 1;
+  const attentionCardGap = viewportWidth >= 768 ? 16 : 12;
   const methodGap = viewportWidth >= 768 ? 16 : 12;
   const nbSectionGap = isDesktopLayout ? 32 : 22;
   const nbFieldGap = isDesktopLayout ? 26 : 20;
@@ -2064,11 +2716,37 @@ export default function CantStartScreen() {
   rechargeStageRef.current = rechargeStage;
   messageStageRef.current = messageStage;
 
-  const canStartQuickClose = quickCloseGoal.trim().length > 0;
+  const quickCloseGoal =
+    quickClosePreset === QUICK_CLOSE_CUSTOM_PRESET
+      ? quickCloseCustomGoal
+      : quickClosePreset ?? '';
+  const canStartQuickClose =
+    quickClosePreset === QUICK_CLOSE_CUSTOM_PRESET
+      ? quickCloseCustomGoal.trim().length > 0
+      : Boolean(quickClosePreset);
   const messageCompletionCopy =
     messageMethod !== null ? MESSAGE_LOOP_COMPLETION_COPY[messageMethod] : null;
   const energyCtaLabel =
     energyChoice !== null ? ENERGY_PROTECTION_CTA[energyChoice] : 'I did it';
+  const standardReplyIntents = REPLY_INTENTS.filter((intent) => intent.id !== 'custom');
+  const customReplyIntent = REPLY_INTENTS.find((intent) => intent.id === 'custom');
+
+  const attentionActiveTask =
+    attentionActiveId !== null
+      ? attentionTasks.find((task) => task.id === attentionActiveId && !task.completed) ?? null
+      : null;
+  const attentionOpenTasks = attentionTasks.filter((task) => !task.completed);
+  const attentionParkedTasks = attentionOpenTasks.filter((task) => task.id !== attentionActiveId);
+  const attentionCompletedTasks = attentionTasks.filter((task) => task.completed);
+  const attentionHasActive = attentionActiveTask !== null;
+  const quickResetCount = quickResetChecked.filter(Boolean).length;
+  const threadContextLabel =
+    threadContextText.trim() || getThreadContextLabel(threadContextKind);
+  const threadSuggestions = getThreadSuggestions(threadContextKind);
+  const threadHasText = threadText.trim().length > 0;
+  const comebackTimestamp = latestComebackNote
+    ? formatComebackTimestamp(latestComebackNote.createdAt)
+    : '';
 
   const suggestedRechargeMethod = getSuggestedRechargeMethod(tiredFeeling);
   const pauseLabel = getPauseOptionLabel(selectedPauseId, customPauseText);
@@ -2116,7 +2794,9 @@ export default function CantStartScreen() {
       stuckType === 'scared-bad' ||
       stuckType === 'bored' ||
       stuckType === 'tired' ||
-      stuckType === 'avoiding-message'
+      stuckType === 'avoiding-message' ||
+      stuckType === 'opened-everything' ||
+      stuckType === 'forgot-what'
     ) {
       return [];
     }
@@ -2277,8 +2957,11 @@ export default function CantStartScreen() {
   const resetMessageLoopState = () => {
     setMessageStage('menu');
     setMessageMethod(null);
+    setMessageContextDraft('');
     setMessageContext('');
-    setQuickCloseGoal('');
+    setMessageContextConfirmed(false);
+    setQuickClosePreset(null);
+    setQuickCloseCustomGoal('');
     setStopwatchElapsed(0);
     setStopwatchRunKey((key) => key + 1);
     setReplyIntent(null);
@@ -2295,6 +2978,44 @@ export default function CantStartScreen() {
     setMessageXpEarned(0);
     setMlInputFocused(false);
     messageRewardingRef.current = false;
+  };
+
+  const resetAttentionResetState = () => {
+    setAttentionStage('reset');
+    setAttentionTasks([]);
+    setAttentionActiveId(null);
+    setAttentionTitle('');
+    setAttentionPriority('medium');
+    setAttentionDeadline('');
+    setAttentionFeedback('');
+    setAttentionEditingId(null);
+    setAttentionEditTitle('');
+    setAttentionEditDeadline('');
+    setAttentionJustFinished(false);
+    setSaveParkedToBrainDump(true);
+    setBrainDumpSaved(false);
+    setShowQuickReset(false);
+    setQuickResetChecked(QUICK_RESET_ITEMS.map(() => false));
+    setAttentionRewarded(false);
+    setAttentionXpEarned(0);
+    setArFocusedField(null);
+    attentionRewardingRef.current = false;
+  };
+
+  const resetThreadRecoveryState = () => {
+    setThreadStage('find');
+    setThreadContextKind(null);
+    setThreadContextText('');
+    setThreadLastMemory('');
+    setThreadIntent('');
+    setThreadText('');
+    setFutureNoteDraft('');
+    setClueSaved(false);
+    setFutureNoteSkipped(false);
+    setThreadRewarded(false);
+    setThreadXpEarned(0);
+    setTrFocusedField(null);
+    threadRewardingRef.current = false;
   };
 
   const returnToBoredomMenu = () => {
@@ -2653,7 +3374,8 @@ export default function CantStartScreen() {
     setMessageXpEarned(0);
     messageRewardingRef.current = false;
     setMessageMethod(null);
-    setQuickCloseGoal('');
+    setQuickClosePreset(null);
+    setQuickCloseCustomGoal('');
     setStopwatchElapsed(0);
     setStopwatchRunKey((key) => key + 1);
     setReplyIntent(null);
@@ -2674,10 +3396,30 @@ export default function CantStartScreen() {
     setMessageXpEarned(0);
     messageRewardingRef.current = false;
     setMessageMethod('close-quickly');
-    setQuickCloseGoal('');
+    setQuickClosePreset(null);
+    setQuickCloseCustomGoal('');
     setStopwatchElapsed(0);
     setStopwatchRunKey((key) => key + 1);
     setMessageStage('quick-setup');
+  };
+
+  const saveMessageContext = () => {
+    const trimmed = messageContextDraft.trim().replace(/\s+/g, ' ').slice(0, MESSAGE_CONTEXT_MAX);
+    setMessageContextDraft(trimmed);
+    setMessageContext(trimmed);
+    setMessageContextConfirmed(Boolean(trimmed));
+  };
+
+  const editMessageContext = () => {
+    setMessageContextDraft(messageContext);
+    setMessageContextConfirmed(false);
+  };
+
+  const selectQuickClosePreset = (preset: string) => {
+    setQuickClosePreset(preset);
+    if (preset !== QUICK_CLOSE_CUSTOM_PRESET) {
+      setQuickCloseCustomGoal('');
+    }
   };
 
   const selectMessageMethod = (method: MessageLoopMethod) => {
@@ -2728,6 +3470,7 @@ export default function CantStartScreen() {
     const title = buildMessageWinTitle({
       method: 'close-quickly',
       elapsedSeconds: stopwatchElapsed,
+      context: messageContext,
     });
     awardMessageWin(title);
   };
@@ -2739,7 +3482,10 @@ export default function CantStartScreen() {
 
   const completeReplyBuilderWin = () => {
     if (!replyDraft.trim()) return;
-    const title = buildMessageWinTitle({ method: 'build-reply' });
+    const title = buildMessageWinTitle({
+      method: 'build-reply',
+      context: messageContext,
+    });
     awardMessageWin(title);
   };
 
@@ -2771,7 +3517,10 @@ export default function CantStartScreen() {
 
   const completeLateReplyWin = () => {
     if (!lateDraft.trim()) return;
-    const title = buildMessageWinTitle({ method: 'late-reply' });
+    const title = buildMessageWinTitle({
+      method: 'late-reply',
+      context: messageContext,
+    });
     awardMessageWin(title);
   };
 
@@ -2812,6 +3561,7 @@ export default function CantStartScreen() {
     const title = buildMessageWinTitle({
       method: 'protect-energy',
       energyChoice,
+      context: messageContext,
     });
     awardMessageWin(title);
   };
@@ -2986,6 +3736,8 @@ export default function CantStartScreen() {
     setStuckType(type);
     setQuestIndex(0);
     setSmallerMode(false);
+    resetAttentionResetState();
+    resetThreadRecoveryState();
     if (type === 'too-big') {
       resetTooBigLocalState();
       resetNoBeginningState();
@@ -3052,6 +3804,192 @@ export default function CantStartScreen() {
     resetBoredomState();
     resetRechargeState();
     resetMessageLoopState();
+    resetAttentionResetState();
+    resetThreadRecoveryState();
+  };
+
+  const refocusAttentionInput = () => {
+    requestAnimationFrame(() => {
+      attentionInputRef.current?.focus();
+    });
+  };
+
+  const addAttentionTask = () => {
+    const result = canAddAttentionTask(attentionTasks, attentionTitle);
+    if (result === 'empty') return;
+    if (result === 'duplicate') {
+      setAttentionFeedback('That task is already on the list.');
+      return;
+    }
+    if (result === 'max') {
+      setAttentionFeedback('Let’s work with the first 12 for now.');
+      return;
+    }
+
+    const task = makeAttentionTask(attentionTitle, attentionPriority, attentionDeadline);
+    setAttentionTasks((prev) => [...prev, task]);
+    setAttentionTitle('');
+    setAttentionPriority('medium');
+    setAttentionDeadline('');
+    setAttentionFeedback('');
+    setShowQuickReset(false);
+    refocusAttentionInput();
+  };
+
+  const updateAttentionTask = (id: string, updates: Partial<AttentionTask>) => {
+    setAttentionTasks((prev) =>
+      prev.map((task) => (task.id === id ? { ...task, ...updates } : task)),
+    );
+  };
+
+  const selectAttentionTask = (id: string) => {
+    const task = attentionTasks.find((item) => item.id === id);
+    if (!task || task.completed) return;
+    setAttentionActiveId(id);
+    setAttentionJustFinished(false);
+  };
+
+  const deleteAttentionTask = (id: string) => {
+    setAttentionTasks((prev) => prev.filter((task) => task.id !== id));
+    if (attentionActiveId === id) setAttentionActiveId(null);
+    if (attentionEditingId === id) {
+      setAttentionEditingId(null);
+      setAttentionEditTitle('');
+      setAttentionEditDeadline('');
+    }
+  };
+
+  const startAttentionEdit = (task: AttentionTask) => {
+    setAttentionEditingId(task.id);
+    setAttentionEditTitle(task.title);
+    setAttentionEditDeadline(task.deadline);
+  };
+
+  const saveAttentionEdit = () => {
+    if (!attentionEditingId) return;
+    const trimmed = attentionEditTitle.trim();
+    if (!trimmed) {
+      setAttentionFeedback('A task needs a name.');
+      return;
+    }
+    const duplicate = attentionTasks.some(
+      (task) =>
+        task.id !== attentionEditingId &&
+        task.title.trim().toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (duplicate) {
+      setAttentionFeedback('That task is already on the list.');
+      return;
+    }
+    updateAttentionTask(attentionEditingId, {
+      title: trimmed.slice(0, ATTENTION_ITEM_CHAR_MAX),
+      deadline: attentionEditDeadline.trim().slice(0, ATTENTION_DEADLINE_MAX),
+    });
+    setAttentionEditingId(null);
+    setAttentionEditTitle('');
+    setAttentionEditDeadline('');
+    setAttentionFeedback('');
+  };
+
+  const cancelAttentionEdit = () => {
+    setAttentionEditingId(null);
+    setAttentionEditTitle('');
+    setAttentionEditDeadline('');
+  };
+
+  const markAttentionTaskDone = (id: string) => {
+    updateAttentionTask(id, { completed: true });
+    if (attentionActiveId === id) setAttentionActiveId(null);
+    setAttentionJustFinished(true);
+  };
+
+  const restoreAttentionTask = (id: string) => {
+    updateAttentionTask(id, { completed: false });
+  };
+
+  const toggleQuickResetItem = (index: number) => {
+    setQuickResetChecked((prev) => prev.map((value, i) => (i === index ? !value : value)));
+  };
+
+  const awardAttentionWin = (title: string) => {
+    if (attentionRewarded || attentionRewardingRef.current) return;
+    attentionRewardingRef.current = true;
+
+    const parked = attentionTasks
+      .filter((task) => !task.completed && task.id !== attentionActiveId)
+      .map((task) => task.title);
+    if (saveParkedToBrainDump && parked.length > 0) {
+      const savedCount = addParkedThoughts(parked);
+      setBrainDumpSaved(savedCount > 0);
+    } else {
+      setBrainDumpSaved(false);
+    }
+
+    addTinyWin(title.slice(0, 80), 'work-study', false);
+    markAchievementEvent('cant-start-quest');
+    setAttentionRewarded(true);
+    setAttentionXpEarned(ATTENTION_RESET_XP);
+    setAttentionStage('complete');
+  };
+
+  const completeAttentionSession = () => {
+    const title = attentionActiveTask?.title ?? attentionCompletedTasks[0]?.title ?? '';
+    awardAttentionWin(buildAttentionWinTitle(title));
+  };
+
+  const completeAttentionFromQuickReset = () => {
+    if (quickResetCount === 0) return;
+    awardAttentionWin(buildAttentionWinTitle(''));
+  };
+
+  const continueAttentionComplete = () => {
+    if (attentionRewarded) setAttentionStage('complete');
+  };
+
+  const keepOrganizingAttention = () => {
+    setAttentionStage('reset');
+  };
+
+  const awardThreadWin = () => {
+    const nextStep = threadText.trim();
+    if (!nextStep) return;
+    if (threadRewarded || threadRewardingRef.current) return;
+    threadRewardingRef.current = true;
+    addTinyWin(buildThreadWinTitle(threadContextLabel), 'work-study', false);
+    markAchievementEvent('cant-start-quest');
+    setThreadRewarded(true);
+    setThreadXpEarned(THREAD_XP);
+    setFutureNoteDraft((current) => current.trim() || buildFutureNoteDraft(nextStep));
+    setThreadStage('complete');
+  };
+
+  const continueThreadComplete = () => {
+    if (threadRewarded) setThreadStage('complete');
+  };
+
+  const useComebackClue = () => {
+    if (!latestComebackNote) return;
+    setThreadText(latestComebackNote.text.slice(0, THREAD_TEXT_MAX));
+    setTrFocusedField('thread');
+    requestAnimationFrame(() => {
+      threadInputRef.current?.focus();
+      cantStartScrollRef.current?.scrollTo({
+        y: Math.max(0, threadSectionYRef.current - 12),
+        animated: true,
+      });
+    });
+  };
+
+  const saveFutureYouClue = () => {
+    const text = futureNoteDraft.trim();
+    if (!text) return;
+    setComebackNote({
+      text: text.slice(0, THREAD_NOTE_MAX),
+      context: threadContextLabel || undefined,
+      createdAt: new Date().toISOString(),
+    });
+    setClueSaved(true);
+    setFutureNoteSkipped(false);
   };
 
   const returnToActivationMenu = () => {
@@ -3343,7 +4281,9 @@ export default function CantStartScreen() {
     <AppShell title="I Can't Start">
       <ScreenContainer>
         <ScrollView
+          ref={cantStartScrollRef}
           contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           {!stuckType ? (
             <View style={styles.selectionStage}>
@@ -6567,49 +7507,114 @@ export default function CantStartScreen() {
                     {
                       backgroundColor: theme.accentTertiary,
                       borderColor: theme.accent,
-                      marginBottom: spacing.sm,
+                      marginBottom: mlSectionGap,
                     },
                   ]}>
                   <View style={styles.rechargeIntroTextGroup}>
-                    <Text style={[styles.rechargeIntroTitle, { color: theme.text }]}>
+                    <Text style={[styles.rechargeIntroTitle, { color: theme.onLightAccent }]}>
                       The reply may take two minutes. The open loop has already taken enough.
                     </Text>
-                    <Text style={[styles.rechargeIntroSupport, { color: theme.text }]}>
+                    <Text style={[styles.rechargeIntroSupport, { color: theme.onLightAccentMuted }]}>
                       Let&apos;s reply, ask for time, set a boundary, or decide that no answer is
                       needed.
                     </Text>
                   </View>
                 </GlassCard>
 
-                <View style={[styles.taskFieldBlock, { marginBottom: mlSectionGap, marginTop: mlFieldGap }]}>
-                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
-                    What is waiting for a reply?
-                  </Text>
-                  <TextInput
-                    value={messageContext}
-                    onChangeText={(v) => setMessageContext(v.slice(0, TASK_TEXT_MAX))}
-                    placeholder="e.g. a work email, a message from a friend, an appointment request"
-                    placeholderTextColor={theme.textMuted}
-                    maxLength={TASK_TEXT_MAX}
-                    accessibilityLabel="What is waiting for a reply?"
-                    returnKeyType="done"
-                    blurOnSubmit
-                    onSubmitEditing={() => {}}
-                    onFocus={() => setMlInputFocused(true)}
-                    onBlur={() => setMlInputFocused(false)}
-                    style={[
-                      styles.taskInput,
-                      {
-                        color: theme.text,
-                        backgroundColor: theme.surface,
-                        borderColor: mlInputFocused ? theme.accent : theme.surfaceBorder,
-                      },
-                      mlInputFocused && styles.taskInputFocused,
-                    ]}
-                  />
-                  <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
-                    Keep it brief. This stays only on this screen.
-                  </Text>
+                <View style={[styles.taskFieldBlock, { marginBottom: mlSectionGap, marginTop: 0 }]}>
+                  <View style={styles.messageContextLabelRow}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                      Who or what are you replying to?
+                    </Text>
+                    <Text style={[styles.messageOptionalTag, { color: theme.textMuted }]}>
+                      (optional)
+                    </Text>
+                  </View>
+
+                  {messageContextConfirmed && messageContext ? (
+                    <View
+                      style={[
+                        styles.messageContextSavedCard,
+                        {
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}>
+                      <Text style={[styles.messageContextSavedText, { color: theme.text }]}>
+                        Replying to: {messageContext}
+                      </Text>
+                      <Pressable
+                        onPress={editMessageContext}
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit message context"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.messageContextEditBtn,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.messageContextEditText, { color: theme.accentSecondary }]}>
+                          Edit
+                        </Text>
+                      </Pressable>
+                      <Text style={[styles.vzFieldHelper, { color: theme.textMuted, marginTop: spacing.xs }]}>
+                        Saved for this message flow ✓
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.messageContextInputRow}>
+                        <TextInput
+                          value={messageContextDraft}
+                          onChangeText={(v) =>
+                            setMessageContextDraft(v.slice(0, MESSAGE_CONTEXT_MAX))
+                          }
+                          placeholder="e.g. my manager about the deadline"
+                          placeholderTextColor={theme.textMuted}
+                          maxLength={MESSAGE_CONTEXT_MAX}
+                          accessibilityLabel="Who or what are you replying to?"
+                          returnKeyType="done"
+                          blurOnSubmit
+                          onSubmitEditing={saveMessageContext}
+                          onFocus={() => setMlInputFocused(true)}
+                          onBlur={() => setMlInputFocused(false)}
+                          style={[
+                            styles.taskInput,
+                            styles.messageContextInput,
+                            {
+                              color: theme.text,
+                              backgroundColor: theme.surface,
+                              borderColor: mlInputFocused ? theme.accent : theme.surfaceBorder,
+                            },
+                            mlInputFocused && styles.taskInputFocused,
+                          ]}
+                        />
+                        <Pressable
+                          onPress={saveMessageContext}
+                          accessibilityRole="button"
+                          accessibilityLabel="Save message context"
+                          style={({ pressed, focused }: PressableFocusState) => [
+                            styles.messageContextSaveBtn,
+                            {
+                              backgroundColor: theme.accentTertiary,
+                              borderColor: theme.accent,
+                            },
+                            pressed && styles.pressed,
+                            focused && Platform.OS === 'web' ? styles.focusRing : null,
+                          ]}>
+                          <Text
+                            style={[
+                              styles.messageContextSaveIcon,
+                              { color: theme.onLightAccent },
+                            ]}>
+                            →
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                        This short note can appear in Tiny Wins. Avoid private details.
+                      </Text>
+                    </>
+                  )}
                 </View>
 
                 <ActivationMethodsGrid columns={messageMethodColumns} gap={methodGap}>
@@ -6652,7 +7657,7 @@ export default function CantStartScreen() {
                       marginBottom: mlFieldGap,
                     },
                   ]}>
-                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                  <Text style={[styles.vzStatementText, { color: theme.onLightAccent }]}>
                     One finished reply means one less task running in the background.
                   </Text>
                 </GlassCard>
@@ -6660,52 +7665,70 @@ export default function CantStartScreen() {
                 <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
                   What would close this loop?
                 </Text>
-                <View style={[styles.exampleRow, { marginBottom: spacing.md }]}>
+                <View style={[styles.exampleRow, { marginBottom: mlFieldGap }]}>
                   {QUICK_CLOSE_GOAL_PRESETS.map((preset) => (
                     <MessageOptionChip
                       key={preset}
                       label={preset}
-                      selected={quickCloseGoal === preset}
-                      onPress={() =>
-                        setQuickCloseGoal(
-                          preset === 'Write my own finish line' ? '' : preset,
-                        )
-                      }
+                      selected={quickClosePreset === preset}
+                      onPress={() => selectQuickClosePreset(preset)}
                     />
                   ))}
                 </View>
-                <TextInput
-                  value={quickCloseGoal}
-                  onChangeText={(v) => setQuickCloseGoal(v.slice(0, TASK_TEXT_MAX))}
-                  placeholder="e.g. send one short answer"
-                  placeholderTextColor={theme.textMuted}
-                  maxLength={TASK_TEXT_MAX}
-                  accessibilityLabel="What would close this loop?"
-                  returnKeyType="done"
-                  blurOnSubmit
-                  onSubmitEditing={startQuickCloseStopwatch}
+
+                {quickClosePreset === QUICK_CLOSE_CUSTOM_PRESET ? (
+                  <View style={[styles.taskFieldBlock, { marginTop: 0, marginBottom: mlFieldGap }]}>
+                    <Text style={[styles.taskFieldLabel, { color: theme.text }]}>My finish line</Text>
+                    <TextInput
+                      value={quickCloseCustomGoal}
+                      onChangeText={(v) => setQuickCloseCustomGoal(v.slice(0, TASK_TEXT_MAX))}
+                      placeholder="e.g. send one clear answer"
+                      placeholderTextColor={theme.textMuted}
+                      maxLength={TASK_TEXT_MAX}
+                      accessibilityLabel="My finish line"
+                      returnKeyType="done"
+                      blurOnSubmit
+                      onSubmitEditing={startQuickCloseStopwatch}
+                      style={[
+                        styles.taskInput,
+                        {
+                          color: theme.text,
+                          backgroundColor: theme.surface,
+                          borderColor: theme.surfaceBorder,
+                        },
+                      ]}
+                    />
+                  </View>
+                ) : null}
+
+                <Text
                   style={[
-                    styles.taskInput,
+                    styles.stageSupport,
                     {
-                      color: theme.text,
-                      backgroundColor: theme.surface,
-                      borderColor: theme.surfaceBorder,
-                      marginBottom: mlFieldGap,
+                      color: theme.textSecondary,
+                      marginBottom: spacing.md,
+                      textAlign: 'left',
+                      alignSelf: 'stretch',
                     },
-                  ]}
-                />
+                  ]}>
+                  Open the message and start the stopwatch. Come back when the loop is closed — the
+                  timer will show how long it really took.
+                </Text>
 
                 <View style={styles.actionStack}>
-                  <View style={[styles.compactBtn, !canStartQuickClose && { opacity: 0.45 }]}>
+                  <View
+                    style={[
+                      styles.compactBtn,
+                      styles.messageStopwatchBtn,
+                      !canStartQuickClose && styles.messageStopwatchBtnDisabled,
+                    ]}
+                    pointerEvents={canStartQuickClose ? 'auto' : 'none'}>
                     <GradientButton
-                      label="Start the clock and open the message"
+                      label="Start stopwatch"
                       onPress={startQuickCloseStopwatch}
                       small
                     />
                   </View>
-                  <Text style={[styles.cueSupportText, { color: theme.textMuted }]}>
-                    Switch to your email or messenger. Come back when the loop is closed.
-                  </Text>
                 </View>
               </View>
             </View>
@@ -6747,7 +7770,11 @@ export default function CantStartScreen() {
                   <Text style={[styles.successBody, { color: theme.textSecondary }]}>
                     That message no longer needs to keep running in the background.
                   </Text>
-                  <Text style={[styles.rechargeIntroTitle, { color: theme.text, marginBottom: spacing.md }]}>
+                  <Text
+                    style={[
+                      styles.rechargeIntroTitle,
+                      { color: theme.text, marginBottom: spacing.md },
+                    ]}>
                     Your brain can put it down now.
                   </Text>
                   <View style={styles.actionStack}>
@@ -6829,8 +7856,8 @@ export default function CantStartScreen() {
                   A useful reply can be two sentences.
                 </Text>
 
-                <ActivationMethodsGrid columns={1} gap={methodGap}>
-                  {REPLY_INTENTS.map((intent) => (
+                <ActivationMethodsGrid columns={messageMethodColumns} gap={methodGap}>
+                  {standardReplyIntents.map((intent) => (
                     <MessageChoiceCard
                       key={intent.id}
                       title={intent.title}
@@ -6840,6 +7867,17 @@ export default function CantStartScreen() {
                     />
                   ))}
                 </ActivationMethodsGrid>
+                {customReplyIntent ? (
+                  <View style={{ marginTop: methodGap, width: '100%' }}>
+                    <MessageChoiceCard
+                      title={customReplyIntent.title}
+                      description={customReplyIntent.description}
+                      selected={replyIntent === customReplyIntent.id}
+                      onPress={() => selectReplyIntent(customReplyIntent.id)}
+                      wide
+                    />
+                  </View>
+                ) : null}
 
                 {replyIntent ? (
                   <View style={[styles.taskFieldBlock, { marginTop: mlFieldGap }]}>
@@ -6947,7 +7985,7 @@ export default function CantStartScreen() {
                       marginBottom: mlFieldGap,
                     },
                   ]}>
-                  <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                  <Text style={[styles.vzStatementText, { color: theme.onLightAccent }]}>
                     One sentence of acknowledgment is enough.
                   </Text>
                 </GlassCard>
@@ -7077,7 +8115,7 @@ export default function CantStartScreen() {
                   reply.
                 </Text>
 
-                <ActivationMethodsGrid columns={1} gap={methodGap}>
+                <ActivationMethodsGrid columns={messageMethodColumns} gap={methodGap}>
                   {ENERGY_PROTECTION_OPTIONS.map((option) => (
                     <MessageChoiceCard
                       key={option.id}
@@ -7188,7 +8226,7 @@ export default function CantStartScreen() {
                           marginBottom: spacing.md,
                         },
                       ]}>
-                      <Text style={[styles.vzStatementText, { color: theme.text }]}>
+                      <Text style={[styles.vzStatementText, { color: theme.onLightAccent }]}>
                         I am choosing not to reply to this message.
                       </Text>
                     </GlassCard>
@@ -7403,6 +8441,772 @@ export default function CantStartScreen() {
                     </Pressable>
                   </View>
                 </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
+          {isAttentionResetFlow && attentionStage === 'reset' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.attentionInner]}>
+                <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>TOO MANY THINGS OPEN</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>Let’s reduce the noise.</Text>
+                <Text style={[styles.stageSupport, { color: theme.textSecondary, marginBottom: spacing.xs }]}>
+                  When too many things compete for your attention, choosing what comes first can make
+                  everything feel smaller.
+                </Text>
+                <Text
+                  style={[
+                    styles.vzFieldHelper,
+                    { color: theme.textMuted, marginBottom: spacing.md },
+                  ]}>
+                  List what is pulling at you, set a priority, then choose just one thing to focus on.
+                </Text>
+
+                <GlassCard style={styles.attentionQuietCard}>
+                  <Text style={[styles.attentionQuietTitle, { color: theme.text }]}>
+                    One thing gets your attention now. The rest stay visible, but parked for later.
+                  </Text>
+                  <Text style={[styles.attentionQuietBody, { color: theme.textMuted }]}>
+                    You are not deleting them. You are only removing the competition for now.
+                  </Text>
+                </GlassCard>
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                  What is pulling at your attention?
+                </Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.sm, marginTop: spacing.xs },
+                  ]}>
+                  Add the things competing for your attention right now.
+                </Text>
+                <AttentionComposer
+                  title={attentionTitle}
+                  onTitleChange={(value) => {
+                    setAttentionTitle(value.slice(0, ATTENTION_ITEM_CHAR_MAX));
+                    if (attentionFeedback) setAttentionFeedback('');
+                  }}
+                  priority={attentionPriority}
+                  onPriorityChange={setAttentionPriority}
+                  deadline={attentionDeadline}
+                  onDeadlineChange={(value) =>
+                    setAttentionDeadline(value.slice(0, ATTENTION_DEADLINE_MAX))
+                  }
+                  onSubmit={addAttentionTask}
+                  inputRef={attentionInputRef}
+                  titleFocused={arFocusedField === 'title'}
+                  deadlineFocused={arFocusedField === 'deadline'}
+                  onTitleFocus={() => setArFocusedField('title')}
+                  onDeadlineFocus={() => setArFocusedField('deadline')}
+                  onBlur={() => setArFocusedField(null)}
+                  feedback={attentionFeedback}
+                />
+
+                {attentionOpenTasks.length > 0 ? (
+                  <>
+                    <Text style={[styles.attentionSectionTitle, { color: theme.textMuted }]}>
+                      YOUR OPEN THINGS
+                    </Text>
+                    <Text
+                      style={[
+                        styles.stageSupport,
+                        { color: theme.textSecondary, marginBottom: spacing.sm },
+                      ]}>
+                      Nothing needs to disappear. First, decide what matters most.
+                    </Text>
+                    {attentionOpenTasks.length >= 2 && !attentionHasActive ? (
+                      <>
+                        <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                          Which one gets your attention first?
+                        </Text>
+                        <Text
+                          style={[
+                            styles.vzFieldHelper,
+                            { color: theme.textMuted, marginBottom: spacing.sm },
+                          ]}>
+                          Choose one task only. The others will stay visible and wait for their turn.
+                        </Text>
+                      </>
+                    ) : null}
+                    {attentionHasActive && attentionParkedTasks.length > 0 ? (
+                      <Text
+                        style={[
+                          styles.vzFieldHelper,
+                          { color: theme.textMuted, marginBottom: spacing.sm },
+                        ]}>
+                        Parked for later: they are still here. They just do not need your attention
+                        right now.
+                      </Text>
+                    ) : null}
+
+                    {attentionJustFinished ? (
+                      <View style={styles.attentionDoneBanner}>
+                        <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                          One thing is off your plate.
+                        </Text>
+                        <Text style={[styles.vzFieldHelper, { color: theme.textSecondary }]}>
+                          Ready to choose what gets the next turn?
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    <AttentionCardsGrid columns={attentionCardColumns} gap={attentionCardGap}>
+                      {attentionOpenTasks.map((task) => (
+                        <AttentionTaskCard
+                          key={task.id}
+                          task={task}
+                          active={attentionActiveId === task.id}
+                          parked={attentionHasActive && attentionActiveId !== task.id}
+                          editing={attentionEditingId === task.id}
+                          editTitle={attentionEditTitle}
+                          editDeadline={attentionEditDeadline}
+                          onEditTitleChange={(value) =>
+                            setAttentionEditTitle(value.slice(0, ATTENTION_ITEM_CHAR_MAX))
+                          }
+                          onEditDeadlineChange={(value) =>
+                            setAttentionEditDeadline(value.slice(0, ATTENTION_DEADLINE_MAX))
+                          }
+                          onStartEdit={() => startAttentionEdit(task)}
+                          onSaveEdit={saveAttentionEdit}
+                          onCancelEdit={cancelAttentionEdit}
+                          onPriorityChange={(priority) =>
+                            updateAttentionTask(task.id, { priority })
+                          }
+                          onMakeActive={() => selectAttentionTask(task.id)}
+                          onMarkDone={() => markAttentionTaskDone(task.id)}
+                          onRestore={() => restoreAttentionTask(task.id)}
+                          onDelete={() => deleteAttentionTask(task.id)}
+                        />
+                      ))}
+                    </AttentionCardsGrid>
+
+                    {attentionHasActive && attentionParkedTasks.length > 0 ? (
+                      <View style={{ marginTop: spacing.md }}>
+                        <QuietCheckRow
+                          label="Save parked tasks to Brain Dump"
+                          checked={saveParkedToBrainDump}
+                          onToggle={() => setSaveParkedToBrainDump((value) => !value)}
+                        />
+                        <Text
+                          style={[
+                            styles.vzFieldHelper,
+                            { color: theme.textMuted, marginTop: spacing.xs },
+                          ]}>
+                          So they do not have to stay in your head.
+                        </Text>
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {!showQuickReset ? (
+                      <Pressable
+                        onPress={() => setShowQuickReset(true)}
+                        accessibilityRole="button"
+                        accessibilityLabel="I don’t want to list everything"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietActionLeft,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          I don’t want to list everything
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <View style={styles.quickResetBlock}>
+                        <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                          Do only these three things.
+                        </Text>
+                        <View style={styles.blockerList}>
+                          {QUICK_RESET_ITEMS.map((item, index) => (
+                            <QuietCheckRow
+                              key={item}
+                              label={item}
+                              checked={quickResetChecked[index]}
+                              onToggle={() => toggleQuickResetItem(index)}
+                            />
+                          ))}
+                        </View>
+                        {quickResetCount > 0 ? (
+                          <View style={[styles.actionStack, { marginTop: spacing.md }]}>
+                            <View style={styles.compactBtn}>
+                              {attentionRewarded ? (
+                                <GradientButton
+                                  label="Continue"
+                                  onPress={continueAttentionComplete}
+                                  small
+                                />
+                              ) : (
+                                <GradientButton
+                                  label={`I reduced the noise +${ATTENTION_RESET_XP} XP`}
+                                  onPress={completeAttentionFromQuickReset}
+                                  small
+                                />
+                              )}
+                            </View>
+                          </View>
+                        ) : null}
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {attentionCompletedTasks.length > 0 ? (
+                  <View style={{ marginTop: spacing.lg }}>
+                    <Text style={[styles.attentionSectionTitle, { color: theme.textMuted }]}>DONE</Text>
+                    <AttentionCardsGrid columns={attentionCardColumns} gap={attentionCardGap}>
+                      {attentionCompletedTasks.map((task) => (
+                        <AttentionTaskCard
+                          key={task.id}
+                          task={task}
+                          active={false}
+                          parked={false}
+                          editing={false}
+                          editTitle=""
+                          editDeadline=""
+                          onEditTitleChange={() => {}}
+                          onEditDeadlineChange={() => {}}
+                          onStartEdit={() => {}}
+                          onSaveEdit={() => {}}
+                          onCancelEdit={() => {}}
+                          onPriorityChange={() => {}}
+                          onMakeActive={() => {}}
+                          onMarkDone={() => {}}
+                          onRestore={() => restoreAttentionTask(task.id)}
+                          onDelete={() => deleteAttentionTask(task.id)}
+                        />
+                      ))}
+                    </AttentionCardsGrid>
+                  </View>
+                ) : null}
+
+                {attentionHasActive || attentionCompletedTasks.length > 0 ? (
+                  <View style={[styles.actionStack, { marginTop: spacing.lg }]}>
+                    <View style={styles.attentionCtaBtn}>
+                      {attentionRewarded ? (
+                        <GradientButton label="Continue" onPress={continueAttentionComplete} small />
+                      ) : (
+                        <GradientButton
+                          label={`I cleared some mental space · +${ATTENTION_RESET_XP} XP`}
+                          onPress={completeAttentionSession}
+                          small
+                        />
+                      )}
+                    </View>
+                    <Pressable
+                      onPress={completeAttentionSession}
+                      accessibilityRole="button"
+                      accessibilityLabel="That’s enough for now"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.quietAction,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                        That’s enough for now
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {isAttentionResetFlow && attentionStage === 'complete' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.attentionCompleteInner]}>
+                <GlassCard style={styles.successCard}>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>
+                    Your attention has somewhere to go.
+                  </Text>
+                  <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                    You chose what matters now and gave everything else permission to wait.
+                  </Text>
+                  <View style={styles.sessionStats}>
+                    {attentionCompletedTasks.length > 0 ? (
+                      <Text style={[styles.sessionStat, { color: theme.text }]}>
+                        You also finished {attentionCompletedTasks.length}{' '}
+                        {attentionCompletedTasks.length === 1 ? 'task' : 'tasks'}.
+                      </Text>
+                    ) : null}
+                    {brainDumpSaved ? (
+                      <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
+                        The rest are waiting in Brain Dump — not in your head.
+                      </Text>
+                    ) : null}
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      +{attentionXpEarned} XP earned
+                    </Text>
+                  </View>
+                  <View style={styles.successActions}>
+                    <View style={styles.successBtn}>
+                      <GradientButton
+                        label="Back to dashboard"
+                        onPress={() => router.push('/dashboard' as never)}
+                        small
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.successLinks}>
+                    <Pressable
+                      onPress={keepOrganizingAttention}
+                      accessibilityRole="button"
+                      accessibilityLabel="Keep organizing"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Keep organizing
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={returnToStuckTypes}
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose another stuck type"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                        Choose another stuck type
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push('/garden' as never)}
+                      accessibilityRole="link"
+                      accessibilityLabel="Check out your garden"
+                      style={({ pressed, focused }: PressableFocusState) => [
+                        styles.successLink,
+                        pressed && styles.pressed,
+                        focused && Platform.OS === 'web' ? styles.focusRing : null,
+                      ]}>
+                      <Text style={[styles.successLinkText, { color: theme.accentSecondary }]}>
+                        Check out your garden
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              </View>
+            </View>
+          ) : null}
+
+          {isThreadRecoveryFlow && threadStage === 'find' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.threadInner]}>
+                <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>I LOST THE THREAD</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>Let’s find where you were.</Text>
+                <Text
+                  style={[
+                    styles.stageSupport,
+                    { color: theme.textSecondary, marginBottom: spacing.md },
+                  ]}>
+                  You do not need to remember the whole task. We only need enough context to reconnect.
+                </Text>
+
+                <GlassCard
+                  style={[
+                    styles.vzStatementCard,
+                    {
+                      backgroundColor: theme.accentTertiary,
+                      borderColor: theme.accent,
+                      marginBottom: spacing.lg,
+                    },
+                  ]}>
+                  <Text style={[styles.vzStatementText, { color: theme.onLightAccent }]}>
+                    Find the last visible clue, not the entire plan.
+                  </Text>
+                </GlassCard>
+
+                {latestComebackNote ? (
+                  <GlassCard style={[styles.clueCard, { marginBottom: spacing.lg }]}>
+                    <Text style={[styles.eyebrow, { color: theme.textMuted }]}>
+                      FUTURE YOU LEFT A CLUE
+                    </Text>
+                    <Text style={[styles.clueMainText, { color: theme.text }]}>
+                      {latestComebackNote.text}
+                    </Text>
+                    {latestComebackNote.context ? (
+                      <Text style={[styles.vzFieldHelper, { color: theme.textSecondary }]}>
+                        From: {latestComebackNote.context}
+                      </Text>
+                    ) : null}
+                    {comebackTimestamp ? (
+                      <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                        {comebackTimestamp}
+                      </Text>
+                    ) : null}
+                    <View style={[styles.actionStack, { marginTop: spacing.sm }]}>
+                      <View style={styles.compactBtn}>
+                        <GradientButton label="Use this clue" onPress={useComebackClue} small />
+                      </View>
+                      <Pressable
+                        onPress={clearComebackNote}
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear this clue"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Clear this clue
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </GlassCard>
+                ) : null}
+
+                <Text style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                  What were you looking at or doing?
+                </Text>
+                <View style={[styles.threadChipWrap, { marginBottom: spacing.md }]}>
+                  {THREAD_CONTEXT_OPTIONS.map((option) => (
+                    <ThreadContextChip
+                      key={option.id}
+                      emoji={option.emoji}
+                      label={option.label}
+                      selected={threadContextKind === option.id}
+                      onPress={() => setThreadContextKind(option.id)}
+                    />
+                  ))}
+                </View>
+                <View style={[styles.taskFieldBlock, { marginTop: 0, marginBottom: spacing.lg }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    Optional context
+                  </Text>
+                  <TextInput
+                    value={threadContextText}
+                    onChangeText={(value) => setThreadContextText(value.slice(0, THREAD_CONTEXT_MAX))}
+                    placeholder="e.g. presentation, kitchen, email to Sam"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={THREAD_CONTEXT_MAX}
+                    accessibilityLabel="Optional context"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onFocus={() => setTrFocusedField('context')}
+                    onBlur={() => setTrFocusedField(null)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor:
+                          trFocusedField === 'context' ? theme.accent : theme.surfaceBorder,
+                      },
+                      trFocusedField === 'context' && styles.taskInputFocused,
+                    ]}
+                  />
+                </View>
+
+                <View style={[styles.taskFieldBlock, { marginTop: 0, marginBottom: spacing.lg }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What is the last thing you remember doing?
+                  </Text>
+                  <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                    Even a tiny detail can be enough.
+                  </Text>
+                  <TextInput
+                    value={threadLastMemory}
+                    onChangeText={(value) => setThreadLastMemory(value.slice(0, THREAD_MEMORY_MAX))}
+                    placeholder="e.g. I had just chosen the images"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={THREAD_MEMORY_MAX}
+                    accessibilityLabel="What is the last thing you remember doing?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onFocus={() => setTrFocusedField('memory')}
+                    onBlur={() => setTrFocusedField(null)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor:
+                          trFocusedField === 'memory' ? theme.accent : theme.surfaceBorder,
+                      },
+                      trFocusedField === 'memory' && styles.taskInputFocused,
+                    ]}
+                  />
+                </View>
+
+                <View style={[styles.taskFieldBlock, { marginTop: 0, marginBottom: spacing.lg }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    What were you trying to get to?
+                  </Text>
+                  <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                    Not the whole project — just what you were trying to make happen next.
+                  </Text>
+                  <TextInput
+                    value={threadIntent}
+                    onChangeText={(value) => setThreadIntent(value.slice(0, THREAD_MEMORY_MAX))}
+                    placeholder="e.g. finish slide 3"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={THREAD_MEMORY_MAX}
+                    accessibilityLabel="What were you trying to get to?"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onFocus={() => setTrFocusedField('intent')}
+                    onBlur={() => setTrFocusedField(null)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor:
+                          trFocusedField === 'intent' ? theme.accent : theme.surfaceBorder,
+                      },
+                      trFocusedField === 'intent' && styles.taskInputFocused,
+                    ]}
+                  />
+                </View>
+
+                {threadContextKind ? (
+                  <View style={{ marginBottom: spacing.md }}>
+                    <Text
+                      style={[styles.taskFieldLabel, { color: theme.text, marginBottom: spacing.sm }]}>
+                      What would reconnect you fastest?
+                    </Text>
+                    <View style={styles.threadChipWrap}>
+                      {threadSuggestions.map((suggestion) => (
+                        <MessageOptionChip
+                          key={suggestion}
+                          label={suggestion}
+                          selected={threadText === suggestion}
+                          onPress={() => setThreadText(suggestion.slice(0, THREAD_TEXT_MAX))}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
+                <View
+                  style={[styles.taskFieldBlock, { marginTop: 0, marginBottom: spacing.md }]}
+                  onLayout={(event) => {
+                    threadSectionYRef.current = event.nativeEvent.layout.y;
+                  }}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>My thread</Text>
+                  <TextInput
+                    ref={threadInputRef}
+                    value={threadText}
+                    onChangeText={(value) => setThreadText(value.slice(0, THREAD_TEXT_MAX))}
+                    placeholder="The next visible step"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={THREAD_TEXT_MAX}
+                    accessibilityLabel="My thread"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onFocus={() => setTrFocusedField('thread')}
+                    onBlur={() => setTrFocusedField(null)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor:
+                          trFocusedField === 'thread' ? theme.accent : theme.surfaceBorder,
+                      },
+                      trFocusedField === 'thread' && styles.taskInputFocused,
+                    ]}
+                  />
+                </View>
+
+                {threadHasText ? (
+                  <>
+                    <GlassCard style={[styles.threadSummaryCard, { marginBottom: spacing.lg }]}>
+                      <Text style={[styles.eyebrow, { color: theme.textMuted }]}>YOUR THREAD</Text>
+                      {threadContextLabel ? (
+                        <Text style={[styles.vzFieldHelper, { color: theme.textSecondary }]}>
+                          You were: {threadContextLabel}
+                        </Text>
+                      ) : null}
+                      {threadLastMemory.trim() ? (
+                        <Text style={[styles.vzFieldHelper, { color: theme.textSecondary }]}>
+                          Last clue: {threadLastMemory.trim()}
+                        </Text>
+                      ) : null}
+                      <Text style={[styles.threadSummaryNext, { color: theme.text }]}>
+                        Next: {threadText.trim()}
+                      </Text>
+                      <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+                        You do not need the rest of the plan yet.
+                      </Text>
+                    </GlassCard>
+                    <View style={styles.actionStack}>
+                      <View style={styles.compactBtn}>
+                        {threadRewarded ? (
+                          <GradientButton label="Continue" onPress={continueThreadComplete} small />
+                        ) : (
+                          <GradientButton
+                            label={`I found the thread +${THREAD_XP} XP`}
+                            onPress={awardThreadWin}
+                            small
+                          />
+                        )}
+                      </View>
+                    </View>
+                  </>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {isThreadRecoveryFlow && threadStage === 'complete' ? (
+            <View style={styles.stageShell}>
+              <View style={[styles.stageInner, styles.threadCompleteInner]}>
+                <InternalBack label="Back to my thread" onPress={() => setThreadStage('find')} />
+                <GlassCard style={styles.successCard}>
+                  <Text style={[styles.successTitle, { color: theme.text }]}>There you are.</Text>
+                  <Text style={[styles.successBody, { color: theme.textSecondary }]}>
+                    You did not need to reconstruct everything. You found enough of the thread to
+                    continue.
+                  </Text>
+                  <View style={styles.sessionStats}>
+                    <Text style={[styles.sessionStat, { color: theme.text }]}>
+                      +{threadXpEarned} XP earned
+                    </Text>
+                    {clueSaved ? (
+                      <Text style={[styles.gardenNote, { color: theme.textSecondary }]}>
+                        You also left yourself a clue for next time.
+                      </Text>
+                    ) : null}
+                  </View>
+                </GlassCard>
+
+                {!futureNoteSkipped ? (
+                <View style={[styles.futureNoteBlock, { marginTop: spacing.lg }]}>
+                  <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
+                    Before you go — leave Future You one clue?
+                  </Text>
+                  <Text
+                    style={[
+                      styles.vzFieldHelper,
+                      { color: theme.textSecondary, marginBottom: spacing.sm },
+                    ]}>
+                    If your attention disappears again, you won’t have to rebuild the whole context.
+                  </Text>
+                  <TextInput
+                    value={futureNoteDraft}
+                    onChangeText={(value) => {
+                      setFutureNoteDraft(value.slice(0, THREAD_NOTE_MAX));
+                      setClueSaved(false);
+                    }}
+                    placeholder="Next: one visible clue"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={THREAD_NOTE_MAX}
+                    accessibilityLabel="Note for Future You"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={saveFutureYouClue}
+                    onFocus={() => setTrFocusedField('note')}
+                    onBlur={() => setTrFocusedField(null)}
+                    style={[
+                      styles.taskInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.surface,
+                        borderColor:
+                          trFocusedField === 'note' ? theme.accent : theme.surfaceBorder,
+                      },
+                      trFocusedField === 'note' && styles.taskInputFocused,
+                    ]}
+                  />
+                  {clueSaved ? (
+                    <>
+                      <Text
+                        style={[
+                          styles.vzCompletedText,
+                          { color: theme.textSecondary, marginTop: spacing.sm },
+                        ]}>
+                        Clue saved ✓
+                      </Text>
+                      <Text style={[styles.vzFieldHelper, { color: theme.textMuted, marginTop: spacing.xs }]}>
+                        Future You will see this the next time you lose the thread.
+                      </Text>
+                    </>
+                  ) : (
+                    <View style={[styles.actionStack, { marginTop: spacing.sm }]}>
+                      <View style={styles.compactBtn}>
+                        <GradientButton
+                          label="Save clue for Future Me"
+                          onPress={saveFutureYouClue}
+                          small
+                        />
+                      </View>
+                      <Pressable
+                        onPress={() => setFutureNoteSkipped(true)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Skip for now"
+                        style={({ pressed, focused }: PressableFocusState) => [
+                          styles.quietAction,
+                          pressed && styles.pressed,
+                          focused && Platform.OS === 'web' ? styles.focusRing : null,
+                        ]}>
+                        <Text style={[styles.quietActionText, { color: theme.textMuted }]}>
+                          Skip for now
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+                ) : null}
+
+                <View style={styles.successActions}>
+                  <View style={styles.successBtn}>
+                    <GradientButton
+                      label="Back to dashboard"
+                      onPress={() => router.push('/dashboard' as never)}
+                      small
+                    />
+                  </View>
+                </View>
+                <View style={styles.successLinks}>
+                  <Pressable
+                    onPress={() => setThreadStage('find')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Back to my thread"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.successLink,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                      Back to my thread
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => router.push('/garden' as never)}
+                    accessibilityRole="link"
+                    accessibilityLabel="Check out your garden"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.successLink,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.successLinkText, { color: theme.accentSecondary }]}>
+                      Check out your garden
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={returnToStuckTypes}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose another stuck type"
+                    style={({ pressed, focused }: PressableFocusState) => [
+                      styles.successLink,
+                      pressed && styles.pressed,
+                      focused && Platform.OS === 'web' ? styles.focusRing : null,
+                    ]}>
+                    <Text style={[styles.successLinkText, { color: theme.textMuted }]}>
+                      Choose another stuck type
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
           ) : null}
@@ -8372,6 +10176,101 @@ const styles = StyleSheet.create({
   messageUnsentInput: {
     minHeight: 180,
   },
+  messageChoiceCard: {
+    flex: 1,
+    minHeight: 112,
+    maxHeight: undefined,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    paddingVertical: 22,
+    paddingHorizontal: 24,
+    gap: spacing.sm,
+    justifyContent: 'flex-start',
+  },
+  messageChoiceWide: {
+    width: '100%',
+  },
+  messageChoiceHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  messageChoiceTitle: {
+    ...typography.body,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  messageChoiceDesc: {
+    ...typography.bodySmall,
+    lineHeight: 20,
+  },
+  messageChoiceCheck: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '700',
+  },
+  messageContextLabelRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+  },
+  messageOptionalTag: {
+    ...typography.caption,
+    fontWeight: '500',
+  },
+  messageContextInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    width: '100%',
+  },
+  messageContextInput: {
+    flex: 1,
+    minWidth: 0,
+  },
+  messageContextSaveBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  messageContextSaveIcon: {
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '700',
+  },
+  messageContextSavedCard: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  messageContextSavedText: {
+    ...typography.body,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  messageContextEditBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: 2,
+  },
+  messageContextEditText: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  messageStopwatchBtn: {
+    maxWidth: MESSAGE_LOOP_STOPWATCH_BTN_MAX,
+    width: '100%',
+  },
+  messageStopwatchBtnDisabled: {
+    opacity: 0.48,
+  },
   rechargeIntroCard: {
     width: '100%',
     paddingVertical: spacing.lg,
@@ -8428,5 +10327,258 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     lineHeight: 20,
+  },
+  attentionInner: {
+    maxWidth: ATTENTION_RESET_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  attentionCompleteInner: {
+    maxWidth: ATTENTION_RESET_COMPLETE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  attentionQuietCard: {
+    width: '100%',
+    paddingVertical: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.xs,
+  },
+  attentionQuietTitle: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  attentionQuietBody: {
+    ...typography.caption,
+    lineHeight: 18,
+  },
+  attentionComposer: {
+    width: '100%',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  attentionComposerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    width: '100%',
+  },
+  attentionComposerInput: {
+    flex: 1,
+    minWidth: 0,
+  },
+  attentionAddBtn: {
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  attentionAddBtnText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  attentionPriorityRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  attentionPriorityChip: {
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  attentionPriorityChipText: {
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  attentionPriorityChipSm: {
+    minHeight: 28,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  attentionPriorityChipSmText: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+  },
+  attentionTaskCard: {
+    flex: 1,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  attentionTaskCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  attentionTaskCardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginLeft: 'auto',
+  },
+  attentionActiveBadge: {
+    ...typography.caption,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  attentionDoneBadge: {
+    ...typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  attentionTaskTitle: {
+    ...typography.body,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  attentionMetaText: {
+    ...typography.caption,
+    lineHeight: 16,
+  },
+  attentionActiveSupport: {
+    ...typography.caption,
+    lineHeight: 18,
+  },
+  attentionTaskFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: spacing.xs,
+  },
+  attentionTaskEdit: {
+    gap: spacing.sm,
+  },
+  attentionTaskEditActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  attentionMarkDone: {
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attentionMarkDoneText: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+  },
+  attentionDoneBanner: {
+    marginBottom: spacing.md,
+    gap: 2,
+  },
+  attentionKeepActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
+    minHeight: 44,
+    paddingHorizontal: spacing.xs,
+  },
+  attentionKeepIcon: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  attentionKeepText: {
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  attentionSectionTitle: {
+    ...typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: spacing.sm,
+  },
+  attentionCtaBtn: {
+    width: '100%',
+    maxWidth: 400,
+  },
+  parkedHeaderRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  quickResetBlock: {
+    width: '100%',
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  threadInner: {
+    maxWidth: THREAD_RECOVERY_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  threadCompleteInner: {
+    maxWidth: THREAD_RECOVERY_COMPLETE_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  clueCard: {
+    width: '100%',
+    gap: spacing.xs,
+  },
+  clueMainText: {
+    ...typography.body,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  threadChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    width: '100%',
+  },
+  threadContextChip: {
+    maxWidth: '100%',
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  threadContextEmoji: {
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  threadContextChipText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    lineHeight: 20,
+    flexShrink: 1,
+  },
+  threadSummaryCard: {
+    width: '100%',
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  threadSummaryNext: {
+    ...typography.h3,
+    lineHeight: 26,
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
+  futureNoteBlock: {
+    width: '100%',
+    marginBottom: spacing.md,
   },
 });

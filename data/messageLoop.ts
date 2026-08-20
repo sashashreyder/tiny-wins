@@ -329,12 +329,40 @@ export function buildBoundaryDraft(choice: EnergyProtectionChoice): string {
   }
 }
 
+function sanitizeWinContext(context?: string): string {
+  if (!context) return '';
+  return context.trim().replace(/\s+/g, ' ');
+}
+
+function clipForTitle(text: string, maxLength: number): string {
+  if (maxLength <= 0) return '';
+  if (text.length <= maxLength) return text;
+  if (maxLength <= 1) return text.slice(0, maxLength);
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function titleWithContext(prefix: string, context: string, suffix = ''): string {
+  const safeContext = sanitizeWinContext(context);
+  if (!safeContext) {
+    return `${prefix}${suffix}`.slice(0, 80);
+  }
+  const joiner = ' ';
+  const available = 80 - prefix.length - suffix.length - joiner.length;
+  const clipped = clipForTitle(safeContext, available);
+  if (!clipped) {
+    return `${prefix}${suffix}`.slice(0, 80);
+  }
+  return `${prefix}${joiner}${clipped}${suffix}`.slice(0, 80);
+}
+
 export function buildMessageWinTitle(params: {
   method: MessageLoopMethod;
   elapsedSeconds?: number;
   energyChoice?: EnergyProtectionChoice | null;
+  context?: string;
 }): string {
-  const { method, elapsedSeconds, energyChoice } = params;
+  const { method, elapsedSeconds, energyChoice, context } = params;
+  const safeContext = sanitizeWinContext(context);
 
   let title: string;
   switch (method) {
@@ -343,39 +371,59 @@ export function buildMessageWinTitle(params: {
         typeof elapsedSeconds === 'number'
           ? formatStopwatchTime(elapsedSeconds)
           : null;
-      title = time
-        ? `Closed an avoided message in ${time}`
-        : 'Closed an avoided message';
+      if (safeContext && time) {
+        title = titleWithContext('Replied to', safeContext, ` in ${time}`);
+      } else if (time) {
+        title = `Closed an avoided message in ${time}`;
+      } else if (safeContext) {
+        title = titleWithContext('Replied to', safeContext);
+      } else {
+        title = 'Closed an avoided message';
+      }
       break;
     }
     case 'build-reply':
-      title = 'Built and sent a short reply';
-      break;
     case 'late-reply':
-      title = 'Replied after a delay';
+      title = safeContext
+        ? titleWithContext('Replied to', safeContext)
+        : 'Replied to an avoided message';
       break;
     case 'protect-energy': {
       switch (energyChoice) {
         case 'ask-for-time':
-          title = 'Asked for more time';
+          title = safeContext
+            ? titleWithContext('Asked for more time about', safeContext)
+            : 'Asked for more time';
           break;
         case 'set-boundary':
-          title = 'Set a communication boundary';
+          title = safeContext
+            ? titleWithContext('Set a boundary about', safeContext)
+            : 'Set a boundary in a difficult conversation';
           break;
         case 'no-reply-needed':
-          title = 'Decided that no reply was needed';
+          title = safeContext
+            ? titleWithContext('Decided not to reply about', safeContext)
+            : 'Decided that no reply was needed';
           break;
         case 'ask-someone-to-check':
-          title = 'Shared a draft for feedback';
+          title = safeContext
+            ? titleWithContext('Shared a draft about', safeContext)
+            : 'Shared a draft for feedback';
           break;
         case 'necessary-only':
-          title = 'Sent a necessary short reply';
+          title = safeContext
+            ? titleWithContext('Replied to', safeContext)
+            : 'Sent a necessary short reply';
           break;
         case 'unsent-draft':
-          title = 'Made a clear communication boundary';
+          title = safeContext
+            ? titleWithContext('Set a boundary about', safeContext)
+            : 'Made a clear communication boundary';
           break;
         default:
-          title = 'Made a clear communication boundary';
+          title = safeContext
+            ? titleWithContext('Replied to', safeContext)
+            : 'Replied to an avoided message';
       }
       break;
     }

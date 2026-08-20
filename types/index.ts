@@ -207,6 +207,12 @@ export interface BrainDumpEntry {
   createdAt: string;
 }
 
+export interface ComebackNote {
+  text: string;
+  context?: string;
+  createdAt: string;
+}
+
 export interface FocusSession {
   id: string;
   title: string;
@@ -246,6 +252,7 @@ export interface AppState {
   gardenItems: GardenItem[];
   achievements: Achievement[];
   brainDumpEntries: BrainDumpEntry[];
+  latestComebackNote: ComebackNote | null;
   focusSessions: FocusSession[];
   selfCareChecks: SelfCareCheck[];
   homeCareTasks: HomeCareTask[];

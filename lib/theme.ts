@@ -15,6 +15,10 @@ export const colors = {
   muted: '#6B6580',
 };
 
+/** Dark ink for text sitting on pale lilac / aqua accent surfaces (any mode). */
+const onLightAccentInk = colors.inkViolet;
+const onLightAccentInkMuted = '#3F365C';
+
 export const lightTheme = {
   mode: 'light' as const,
   background: '#F5F0FF',
@@ -27,6 +31,11 @@ export const lightTheme = {
   accent: colors.softCoral,
   accentSecondary: colors.aqua,
   accentTertiary: colors.softLilac,
+  /** Foreground for pale accent backgrounds (statement cards, selected chips). */
+  onLightAccent: onLightAccentInk,
+  onLightAccentMuted: onLightAccentInkMuted,
+  selectedForeground: onLightAccentInk,
+  selectedForegroundMuted: onLightAccentInkMuted,
   gradientStart: '#EDE7FF',
   gradientEnd: '#FFF8EE',
   cardGlow: 'rgba(200, 182, 255, 0.25)',
@@ -48,6 +57,11 @@ export const darkTheme = {
   accent: colors.softCoral,
   accentSecondary: colors.aqua,
   accentTertiary: colors.periwinkle,
+  /** Foreground for pale accent backgrounds (statement cards, selected chips). */
+  onLightAccent: onLightAccentInk,
+  onLightAccentMuted: onLightAccentInkMuted,
+  selectedForeground: onLightAccentInk,
+  selectedForegroundMuted: onLightAccentInkMuted,
   gradientStart: '#141222',
   gradientEnd: '#211A3A',
   cardGlow: 'rgba(125, 226, 209, 0.12)',

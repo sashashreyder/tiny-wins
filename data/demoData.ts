@@ -92,6 +92,7 @@ export function createDemoState(): AppState {
         createdAt: day(4),
       },
     ],
+    latestComebackNote: null,
     focusSessions: [
       {
         id: 'f1',
@@ -124,6 +125,7 @@ export function createEmptyState(): AppState {
     gardenItems: [],
     achievements: createInitialAchievements(),
     brainDumpEntries: [],
+    latestComebackNote: null,
     focusSessions: [],
     selfCareChecks: [],
     homeCareTasks: [],
