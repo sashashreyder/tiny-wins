@@ -153,7 +153,7 @@ const RECHARGE_COMPLETE_MAX_WIDTH = 790;
 const MESSAGE_LOOP_MENU_MAX_WIDTH = 1000;
 const MESSAGE_LOOP_ACTIVE_MAX_WIDTH = 960;
 const MESSAGE_LOOP_COMPLETE_MAX_WIDTH = 790;
-const ATTENTION_RESET_MAX_WIDTH = 960;
+const ATTENTION_RESET_MAX_WIDTH = 860;
 const ATTENTION_RESET_COMPLETE_MAX_WIDTH = 790;
 const THREAD_RECOVERY_MAX_WIDTH = 860;
 const THREAD_RECOVERY_COMPLETE_MAX_WIDTH = 790;
@@ -1176,35 +1176,8 @@ function MessageOptionChip({
   );
 }
 
-function AttentionCardsGrid({
-  children,
-  columns,
-  gap,
-}: {
-  children: React.ReactNode[];
-  columns: number;
-  gap: number;
-}) {
-  const rows = chunk(children, columns);
-
-  return (
-    <View style={[styles.methodGrid, { gap }]}>
-      {rows.map((row, rowIndex) => (
-        <View key={`attention-row-${rowIndex}`} style={[styles.methodRow, { gap }]}>
-          {row.map((child, colIndex) => (
-            <View key={`attention-cell-${rowIndex}-${colIndex}`} style={styles.methodCell}>
-              {child}
-            </View>
-          ))}
-          {row.length < columns
-            ? Array.from({ length: columns - row.length }).map((_, i) => (
-                <View key={`attention-spacer-${rowIndex}-${i}`} style={styles.methodCell} />
-              ))
-            : null}
-        </View>
-      ))}
-    </View>
-  );
+function AttentionTaskList({ children }: { children: React.ReactNode }) {
+  return <View style={styles.attentionTaskList}>{children}</View>;
 }
 
 function AttentionPriorityChips({
@@ -1253,10 +1226,41 @@ function AttentionPriorityChips({
   );
 }
 
+function AttentionPriorityBadge({
+  priority,
+  onPress,
+}: {
+  priority: AttentionPriority;
+  onPress?: () => void;
+}) {
+  const theme = useAppTheme();
+  const label = ATTENTION_PRIORITIES.find((option) => option.id === priority)?.label ?? priority;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : 'none'}
+      accessibilityLabel={`${label} priority`}
+      style={({ pressed, focused }: PressableFocusState) => [
+        styles.attentionPriorityBadge,
+        {
+          backgroundColor: theme.accentTertiary,
+          borderColor: theme.accent,
+        },
+        pressed && onPress ? styles.pressed : null,
+        focused && Platform.OS === 'web' ? styles.focusRing : null,
+      ]}>
+      <Text style={[styles.attentionPriorityBadgeText, { color: theme.selectedForeground }]}>
+        {label.toUpperCase()}
+      </Text>
+    </Pressable>
+  );
+}
+
 function AttentionTaskCard({
   task,
   active,
-  parked,
   editing,
   editTitle,
   editDeadline,
@@ -1273,7 +1277,6 @@ function AttentionTaskCard({
 }: {
   task: AttentionTask;
   active: boolean;
-  parked: boolean;
   editing: boolean;
   editTitle: string;
   editDeadline: string;
@@ -1289,183 +1292,167 @@ function AttentionTaskCard({
   onDelete: () => void;
 }) {
   const theme = useAppTheme();
+  const [pickingPriority, setPickingPriority] = useState(false);
   const titleColor = active ? theme.selectedForeground : task.completed ? theme.textMuted : theme.text;
   const actionColor = active ? theme.selectedForeground : theme.accent;
+  const showPriorityPicker = pickingPriority || editing;
 
   return (
     <View
       style={[
-        styles.attentionTaskCard,
+        styles.attentionTaskRow,
         {
           backgroundColor: active ? theme.accentTertiary : theme.surface,
           borderColor: active ? theme.accent : theme.surfaceBorder,
           borderWidth: active ? 2 : 1,
-          opacity: task.completed ? 0.78 : parked ? 0.92 : 1,
+          opacity: task.completed ? 0.78 : 1,
         },
       ]}>
-      <View style={styles.attentionTaskCardTop}>
+      <View style={styles.attentionTaskMain}>
         {active ? (
           <Text style={[styles.attentionActiveBadge, { color: theme.selectedForeground }]}>
-            ★ ACTIVE NOW
+            ★ STARTING HERE
           </Text>
-        ) : null}
-        {parked && !task.completed ? (
-          <Text style={[styles.attentionDoneBadge, { color: theme.textMuted }]}>PARKED FOR LATER</Text>
         ) : null}
         {task.completed ? (
           <Text style={[styles.attentionDoneBadge, { color: theme.textMuted }]}>✓ DONE</Text>
         ) : null}
-        <View style={styles.attentionTaskCardActions}>
-          {!task.completed ? (
-            <Pressable
-              onPress={onStartEdit}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit: ${task.title}`}
-              hitSlop={8}
-              style={({ pressed, focused }: PressableFocusState) => [
-                styles.rowIconBtn,
-                { backgroundColor: theme.accent + '18' },
-                pressed && styles.rowIconBtnPressed,
-                focused && Platform.OS === 'web' ? styles.focusRing : null,
-              ]}>
-              <Text style={[styles.rowEditIcon, { color: theme.accent }]}>✎</Text>
-            </Pressable>
-          ) : null}
+
+        {editing && !task.completed ? (
+          <View style={styles.attentionTaskEdit}>
+            <TextInput
+              value={editTitle}
+              onChangeText={onEditTitleChange}
+              placeholder="Task name"
+              placeholderTextColor={theme.textMuted}
+              maxLength={ATTENTION_ITEM_CHAR_MAX}
+              accessibilityLabel="Edit task name"
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={onSaveEdit}
+              style={[
+                styles.taskInput,
+                {
+                  color: theme.text,
+                  backgroundColor: theme.background,
+                  borderColor: theme.accent,
+                },
+              ]}
+            />
+            <TextInput
+              value={editDeadline}
+              onChangeText={onEditDeadlineChange}
+              placeholder="Deadline (optional)"
+              placeholderTextColor={theme.textMuted}
+              maxLength={ATTENTION_DEADLINE_MAX}
+              accessibilityLabel="Edit deadline"
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={onSaveEdit}
+              style={[
+                styles.taskInput,
+                {
+                  color: theme.text,
+                  backgroundColor: theme.background,
+                  borderColor: theme.surfaceBorder,
+                },
+              ]}
+            />
+            <View style={styles.attentionTaskEditActions}>
+              <Pressable
+                onPress={onSaveEdit}
+                accessibilityRole="button"
+                accessibilityLabel="Save task edits"
+                style={({ pressed, focused }: PressableFocusState) => [
+                  styles.editSaveBtn,
+                  { backgroundColor: theme.accent },
+                  pressed && styles.pressed,
+                  focused && Platform.OS === 'web' ? styles.focusRing : null,
+                ]}>
+                <Text style={[styles.editSaveText, { color: theme.text }]}>Save</Text>
+              </Pressable>
+              <Pressable
+                onPress={onCancelEdit}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel editing"
+                style={({ pressed, focused }: PressableFocusState) => [
+                  styles.editCancelBtn,
+                  pressed && styles.pressed,
+                  focused && Platform.OS === 'web' ? styles.focusRing : null,
+                ]}>
+                <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
           <Pressable
-            onPress={onDelete}
-            accessibilityRole="button"
-            accessibilityLabel={`Delete: ${task.title}`}
-            hitSlop={8}
-            style={({ pressed, focused }: PressableFocusState) => [
-              styles.rowIconBtn,
-              { backgroundColor: theme.accent + '18' },
-              pressed && styles.rowIconBtnPressed,
-              focused && Platform.OS === 'web' ? styles.focusRing : null,
-            ]}>
-            <Text style={[styles.rowDeleteIcon, { color: theme.accent }]}>🗑</Text>
+            onPress={task.completed || active ? undefined : onMakeActive}
+            accessibilityRole={task.completed || active ? 'none' : 'button'}
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={
+              task.completed
+                ? task.title
+                : active
+                  ? `${task.title}, starting here`
+                  : `Start with this: ${task.title}`
+            }
+            disabled={task.completed || active}>
+            <Text
+              style={[
+                styles.attentionTaskTitle,
+                {
+                  color: titleColor,
+                  textDecorationLine: task.completed ? 'line-through' : 'none',
+                },
+              ]}
+              numberOfLines={2}>
+              {task.completed ? `✓ ${task.title}` : task.title}
+            </Text>
           </Pressable>
-        </View>
+        )}
+
+        {!task.completed ? (
+          <View style={styles.attentionTaskMeta}>
+            {showPriorityPicker ? (
+              <AttentionPriorityChips
+                value={task.priority}
+                compact
+                onChange={(priority) => {
+                  onPriorityChange(priority);
+                  setPickingPriority(false);
+                }}
+              />
+            ) : (
+              <AttentionPriorityBadge
+                priority={task.priority}
+                onPress={() => setPickingPriority(true)}
+              />
+            )}
+            {task.deadline && !editing ? (
+              <Text
+                style={[
+                  styles.attentionMetaText,
+                  { color: active ? theme.selectedForegroundMuted : theme.textMuted },
+                ]}>
+                Deadline: {task.deadline}
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={[styles.attentionMetaText, { color: theme.textMuted }]}>
+            {ATTENTION_PRIORITIES.find((option) => option.id === task.priority)?.label}
+            {task.deadline ? ` · Deadline: ${task.deadline}` : ''}
+          </Text>
+        )}
+
+        {active && !editing ? (
+          <Text style={[styles.attentionActiveSupport, { color: theme.selectedForegroundMuted }]}>
+            Give this one your attention first. The others can wait for now.
+          </Text>
+        ) : null}
       </View>
 
-      {editing && !task.completed ? (
-        <View style={styles.attentionTaskEdit}>
-          <TextInput
-            value={editTitle}
-            onChangeText={onEditTitleChange}
-            placeholder="Task name"
-            placeholderTextColor={theme.textMuted}
-            maxLength={ATTENTION_ITEM_CHAR_MAX}
-            accessibilityLabel="Edit task name"
-            returnKeyType="done"
-            blurOnSubmit
-            onSubmitEditing={onSaveEdit}
-            style={[
-              styles.taskInput,
-              {
-                color: theme.text,
-                backgroundColor: theme.background,
-                borderColor: theme.accent,
-              },
-            ]}
-          />
-          <TextInput
-            value={editDeadline}
-            onChangeText={onEditDeadlineChange}
-            placeholder="Deadline (optional)"
-            placeholderTextColor={theme.textMuted}
-            maxLength={ATTENTION_DEADLINE_MAX}
-            accessibilityLabel="Edit deadline"
-            returnKeyType="done"
-            blurOnSubmit
-            onSubmitEditing={onSaveEdit}
-            style={[
-              styles.taskInput,
-              {
-                color: theme.text,
-                backgroundColor: theme.background,
-                borderColor: theme.surfaceBorder,
-              },
-            ]}
-          />
-          <View style={styles.attentionTaskEditActions}>
-            <Pressable
-              onPress={onSaveEdit}
-              accessibilityRole="button"
-              accessibilityLabel="Save task edits"
-              style={({ pressed, focused }: PressableFocusState) => [
-                styles.editSaveBtn,
-                { backgroundColor: theme.accent },
-                pressed && styles.pressed,
-                focused && Platform.OS === 'web' ? styles.focusRing : null,
-              ]}>
-              <Text style={[styles.editSaveText, { color: theme.text }]}>Save</Text>
-            </Pressable>
-            <Pressable
-              onPress={onCancelEdit}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel editing"
-              style={({ pressed, focused }: PressableFocusState) => [
-                styles.editCancelBtn,
-                pressed && styles.pressed,
-                focused && Platform.OS === 'web' ? styles.focusRing : null,
-              ]}>
-              <Text style={[styles.editCancelText, { color: theme.textMuted }]}>✕</Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : (
-        <Pressable
-          onPress={task.completed ? undefined : active ? undefined : onMakeActive}
-          accessibilityRole={task.completed || active ? 'none' : 'button'}
-          accessibilityState={{ selected: active }}
-          accessibilityLabel={
-            task.completed
-              ? task.title
-              : active
-                ? `${task.title}, active now`
-                : `Make active: ${task.title}`
-          }
-          disabled={task.completed || active}
-          style={({ pressed, focused }: PressableFocusState) => [
-            !task.completed && !active && pressed ? styles.pressed : null,
-            !task.completed && !active && focused && Platform.OS === 'web' ? styles.focusRing : null,
-          ]}>
-          <Text
-            style={[
-              styles.attentionTaskTitle,
-              {
-                color: titleColor,
-                textDecorationLine: task.completed ? 'line-through' : 'none',
-              },
-            ]}
-            numberOfLines={3}>
-            {task.completed ? `✓ ${task.title}` : active ? `★ ${task.title}` : task.title}
-          </Text>
-        </Pressable>
-      )}
-
-      {!task.completed ? (
-        <AttentionPriorityChips value={task.priority} onChange={onPriorityChange} compact />
-      ) : (
-        <Text style={[styles.attentionMetaText, { color: theme.textMuted }]}>
-          {ATTENTION_PRIORITIES.find((option) => option.id === task.priority)?.label}
-          {task.deadline ? ` · ${task.deadline}` : ''}
-        </Text>
-      )}
-
-      {!editing && task.deadline && !task.completed ? (
-        <Text style={[styles.attentionMetaText, { color: active ? theme.selectedForegroundMuted : theme.textMuted }]}>
-          Deadline: {task.deadline}
-        </Text>
-      ) : null}
-
-      {active ? (
-        <Text style={[styles.attentionActiveSupport, { color: theme.selectedForegroundMuted }]}>
-          This is the only task that needs your attention right now.
-        </Text>
-      ) : null}
-
-      <View style={styles.attentionTaskFooter}>
+      <View style={styles.attentionTaskActions}>
         {task.completed ? (
           <Pressable
             onPress={onRestore}
@@ -1481,33 +1468,57 @@ function AttentionTaskCard({
         ) : active ? (
           <Pressable
             onPress={onMarkDone}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: false }}
-            accessibilityLabel={`Mark done: ${task.title}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Done: ${task.title}`}
             style={({ pressed, focused }: PressableFocusState) => [
               styles.attentionMarkDone,
-              {
-                backgroundColor: theme.accent,
-              },
+              { backgroundColor: theme.accent },
               pressed && styles.pressed,
               focused && Platform.OS === 'web' ? styles.focusRing : null,
             ]}>
-            <Text style={[styles.attentionMarkDoneText, { color: theme.text }]}>✓ Mark done</Text>
+            <Text style={[styles.attentionMarkDoneText, { color: theme.text }]}>✓ Done</Text>
           </Pressable>
         ) : (
           <Pressable
             onPress={onMakeActive}
             accessibilityRole="button"
-            accessibilityLabel={`Make active: ${task.title}`}
+            accessibilityLabel={`Start with this: ${task.title}`}
             style={({ pressed, focused }: PressableFocusState) => [
               styles.attentionKeepActive,
               pressed && styles.pressed,
               focused && Platform.OS === 'web' ? styles.focusRing : null,
             ]}>
-            <Text style={[styles.attentionKeepIcon, { color: actionColor }]}>○</Text>
-            <Text style={[styles.attentionKeepText, { color: actionColor }]}>Make active</Text>
+            <Text style={[styles.attentionKeepText, { color: actionColor }]}>Start with this</Text>
           </Pressable>
         )}
+        {!task.completed ? (
+          <Pressable
+            onPress={onStartEdit}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit: ${task.title}`}
+            hitSlop={8}
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.rowIconBtn,
+              { backgroundColor: theme.accent + '18' },
+              pressed && styles.rowIconBtnPressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.rowEditIcon, { color: theme.accent }]}>✎</Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          onPress={onDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete: ${task.title}`}
+          hitSlop={8}
+          style={({ pressed, focused }: PressableFocusState) => [
+            styles.rowIconBtn,
+            { backgroundColor: theme.accent + '18' },
+            pressed && styles.rowIconBtnPressed,
+            focused && Platform.OS === 'web' ? styles.focusRing : null,
+          ]}>
+          <Text style={[styles.rowDeleteIcon, { color: theme.accent }]}>🗑</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -1590,12 +1601,12 @@ function AttentionComposer({
         />
       </View>
 
-      <Text style={[styles.taskFieldLabel, { color: theme.text, marginTop: spacing.sm }]}>
+      <Text style={[styles.taskFieldLabel, { color: theme.text, marginTop: spacing.xs }]}>
         Priority
       </Text>
       <AttentionPriorityChips value={priority} onChange={onPriorityChange} />
 
-      <Text style={[styles.taskFieldLabel, { color: theme.text, marginTop: spacing.sm }]}>
+      <Text style={[styles.taskFieldLabel, { color: theme.text, marginTop: spacing.xs }]}>
         Deadline (optional)
       </Text>
       <TextInput
@@ -1621,7 +1632,7 @@ function AttentionComposer({
         ]}
       />
 
-      <View style={[styles.attentionComposerRow, { marginTop: spacing.sm }]}>
+      <View style={[styles.attentionComposerRow, { marginTop: spacing.xs }]}>
         <Pressable
           onPress={onSubmit}
           accessibilityRole="button"
@@ -1641,6 +1652,50 @@ function AttentionComposer({
       {feedback ? (
         <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>{feedback}</Text>
       ) : null}
+    </View>
+  );
+}
+
+function AttentionBrainDumpSave({
+  parkedCount,
+  needsSave,
+  status,
+  onSave,
+}: {
+  parkedCount: number;
+  needsSave: boolean;
+  status: 'idle' | 'saved' | 'already';
+  onSave: () => void;
+}) {
+  const theme = useAppTheme();
+  if (parkedCount === 0) return null;
+
+  return (
+    <View style={styles.attentionBrainDumpSave}>
+      {needsSave || status === 'idle' ? (
+        <>
+          <Pressable
+            onPress={onSave}
+            accessibilityRole="button"
+            accessibilityLabel="Save these for later"
+            style={({ pressed, focused }: PressableFocusState) => [
+              styles.attentionBrainDumpBtn,
+              pressed && styles.pressed,
+              focused && Platform.OS === 'web' ? styles.focusRing : null,
+            ]}>
+            <Text style={[styles.attentionBrainDumpBtnText, { color: theme.textMuted }]}>
+              Save these for later
+            </Text>
+          </Pressable>
+          <Text style={[styles.vzFieldHelper, { color: theme.textMuted }]}>
+            Adds the parked tasks to Brain Dump so they won’t disappear when you leave.
+          </Text>
+        </>
+      ) : (
+        <Text style={[styles.attentionBrainDumpConfirm, { color: theme.textSecondary }]}>
+          {status === 'already' ? 'Already saved in Brain Dump ✓' : '✓ Saved to Brain Dump'}
+        </Text>
+      )}
     </View>
   );
 }
@@ -2570,7 +2625,8 @@ export default function CantStartScreen() {
   const [attentionEditTitle, setAttentionEditTitle] = useState('');
   const [attentionEditDeadline, setAttentionEditDeadline] = useState('');
   const [attentionJustFinished, setAttentionJustFinished] = useState(false);
-  const [saveParkedToBrainDump, setSaveParkedToBrainDump] = useState(true);
+  const [savedParkedKeys, setSavedParkedKeys] = useState<string[]>([]);
+  const [brainDumpSaveStatus, setBrainDumpSaveStatus] = useState<'idle' | 'saved' | 'already'>('idle');
   const [brainDumpSaved, setBrainDumpSaved] = useState(false);
   const [showQuickReset, setShowQuickReset] = useState(false);
   const [quickResetChecked, setQuickResetChecked] = useState<boolean[]>(() =>
@@ -2631,8 +2687,6 @@ export default function CantStartScreen() {
   const boredomMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const rechargeMethodColumns = viewportWidth >= 768 ? 2 : 1;
   const messageMethodColumns = viewportWidth >= 768 ? 2 : 1;
-  const attentionCardColumns = viewportWidth >= 700 ? 2 : 1;
-  const attentionCardGap = viewportWidth >= 768 ? 16 : 12;
   const methodGap = viewportWidth >= 768 ? 16 : 12;
   const nbSectionGap = isDesktopLayout ? 32 : 22;
   const nbFieldGap = isDesktopLayout ? 26 : 20;
@@ -2739,6 +2793,10 @@ export default function CantStartScreen() {
   const attentionParkedTasks = attentionOpenTasks.filter((task) => task.id !== attentionActiveId);
   const attentionCompletedTasks = attentionTasks.filter((task) => task.completed);
   const attentionHasActive = attentionActiveTask !== null;
+  const parkedNeedsSave = attentionParkedTasks.some((task) => {
+    const key = task.title.trim().toLowerCase();
+    return key.length > 0 && !savedParkedKeys.includes(key);
+  });
   const quickResetCount = quickResetChecked.filter(Boolean).length;
   const threadContextLabel =
     threadContextText.trim() || getThreadContextLabel(threadContextKind);
@@ -2992,7 +3050,8 @@ export default function CantStartScreen() {
     setAttentionEditTitle('');
     setAttentionEditDeadline('');
     setAttentionJustFinished(false);
-    setSaveParkedToBrainDump(true);
+    setSavedParkedKeys([]);
+    setBrainDumpSaveStatus('idle');
     setBrainDumpSaved(false);
     setShowQuickReset(false);
     setQuickResetChecked(QUICK_RESET_ITEMS.map(() => false));
@@ -3915,22 +3974,54 @@ export default function CantStartScreen() {
     if (attentionRewarded || attentionRewardingRef.current) return;
     attentionRewardingRef.current = true;
 
-    const parked = attentionTasks
-      .filter((task) => !task.completed && task.id !== attentionActiveId)
-      .map((task) => task.title);
-    if (saveParkedToBrainDump && parked.length > 0) {
-      const savedCount = addParkedThoughts(parked);
-      setBrainDumpSaved(savedCount > 0);
-    } else {
-      setBrainDumpSaved(false);
-    }
-
     addTinyWin(title.slice(0, 80), 'work-study', false);
     markAchievementEvent('cant-start-quest');
     setAttentionRewarded(true);
     setAttentionXpEarned(ATTENTION_RESET_XP);
     setAttentionStage('complete');
   };
+
+  const saveParkedToBrainDumpNow = () => {
+    const titles = attentionParkedTasks.map((task) => task.title);
+    const savedCount = addParkedThoughts(titles);
+    setSavedParkedKeys((prev) => {
+      const next = new Set(prev);
+      for (const title of titles) {
+        const key = title.trim().toLowerCase();
+        if (key) next.add(key);
+      }
+      return [...next];
+    });
+    if (savedCount > 0) {
+      setBrainDumpSaved(true);
+      setBrainDumpSaveStatus('saved');
+    } else {
+      setBrainDumpSaveStatus('already');
+    }
+  };
+
+  const renderAttentionTaskCard = (task: AttentionTask, active: boolean) => (
+    <AttentionTaskCard
+      key={task.id}
+      task={task}
+      active={active}
+      editing={attentionEditingId === task.id}
+      editTitle={attentionEditTitle}
+      editDeadline={attentionEditDeadline}
+      onEditTitleChange={(value) => setAttentionEditTitle(value.slice(0, ATTENTION_ITEM_CHAR_MAX))}
+      onEditDeadlineChange={(value) =>
+        setAttentionEditDeadline(value.slice(0, ATTENTION_DEADLINE_MAX))
+      }
+      onStartEdit={() => startAttentionEdit(task)}
+      onSaveEdit={saveAttentionEdit}
+      onCancelEdit={cancelAttentionEdit}
+      onPriorityChange={(priority) => updateAttentionTask(task.id, { priority })}
+      onMakeActive={() => selectAttentionTask(task.id)}
+      onMarkDone={() => markAttentionTaskDone(task.id)}
+      onRestore={() => restoreAttentionTask(task.id)}
+      onDelete={() => deleteAttentionTask(task.id)}
+    />
+  );
 
   const completeAttentionSession = () => {
     const title = attentionActiveTask?.title ?? attentionCompletedTasks[0]?.title ?? '';
@@ -8506,98 +8597,83 @@ export default function CantStartScreen() {
 
                 {attentionOpenTasks.length > 0 ? (
                   <>
-                    <Text style={[styles.attentionSectionTitle, { color: theme.textMuted }]}>
-                      YOUR OPEN THINGS
-                    </Text>
-                    <Text
-                      style={[
-                        styles.stageSupport,
-                        { color: theme.textSecondary, marginBottom: spacing.sm },
-                      ]}>
-                      Nothing needs to disappear. First, decide what matters most.
-                    </Text>
-                    {attentionOpenTasks.length >= 2 && !attentionHasActive ? (
-                      <>
-                        <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
-                          Which one gets your attention first?
-                        </Text>
-                        <Text
-                          style={[
-                            styles.vzFieldHelper,
-                            { color: theme.textMuted, marginBottom: spacing.sm },
-                          ]}>
-                          Choose one task only. The others will stay visible and wait for their turn.
-                        </Text>
-                      </>
-                    ) : null}
-                    {attentionHasActive && attentionParkedTasks.length > 0 ? (
-                      <Text
-                        style={[
-                          styles.vzFieldHelper,
-                          { color: theme.textMuted, marginBottom: spacing.sm },
-                        ]}>
-                        Parked for later: they are still here. They just do not need your attention
-                        right now.
-                      </Text>
-                    ) : null}
-
                     {attentionJustFinished ? (
                       <View style={styles.attentionDoneBanner}>
                         <Text style={[styles.taskFieldLabel, { color: theme.text }]}>
-                          One thing is off your plate.
+                          One thing is off your plate ✓
                         </Text>
                         <Text style={[styles.vzFieldHelper, { color: theme.textSecondary }]}>
-                          Ready to choose what gets the next turn?
+                          Choose what gets the next turn — or stop here.
                         </Text>
                       </View>
                     ) : null}
 
-                    <AttentionCardsGrid columns={attentionCardColumns} gap={attentionCardGap}>
-                      {attentionOpenTasks.map((task) => (
-                        <AttentionTaskCard
-                          key={task.id}
-                          task={task}
-                          active={attentionActiveId === task.id}
-                          parked={attentionHasActive && attentionActiveId !== task.id}
-                          editing={attentionEditingId === task.id}
-                          editTitle={attentionEditTitle}
-                          editDeadline={attentionEditDeadline}
-                          onEditTitleChange={(value) =>
-                            setAttentionEditTitle(value.slice(0, ATTENTION_ITEM_CHAR_MAX))
-                          }
-                          onEditDeadlineChange={(value) =>
-                            setAttentionEditDeadline(value.slice(0, ATTENTION_DEADLINE_MAX))
-                          }
-                          onStartEdit={() => startAttentionEdit(task)}
-                          onSaveEdit={saveAttentionEdit}
-                          onCancelEdit={cancelAttentionEdit}
-                          onPriorityChange={(priority) =>
-                            updateAttentionTask(task.id, { priority })
-                          }
-                          onMakeActive={() => selectAttentionTask(task.id)}
-                          onMarkDone={() => markAttentionTaskDone(task.id)}
-                          onRestore={() => restoreAttentionTask(task.id)}
-                          onDelete={() => deleteAttentionTask(task.id)}
-                        />
-                      ))}
-                    </AttentionCardsGrid>
-
-                    {attentionHasActive && attentionParkedTasks.length > 0 ? (
-                      <View style={{ marginTop: spacing.md }}>
-                        <QuietCheckRow
-                          label="Save parked tasks to Brain Dump"
-                          checked={saveParkedToBrainDump}
-                          onToggle={() => setSaveParkedToBrainDump((value) => !value)}
-                        />
+                    {attentionHasActive && attentionActiveTask ? (
+                      <>
+                        <Text style={[styles.attentionSectionTitle, { color: theme.textMuted }]}>
+                          STARTING HERE
+                        </Text>
+                        <AttentionTaskList>
+                          {renderAttentionTaskCard(attentionActiveTask, true)}
+                        </AttentionTaskList>
+                        {attentionParkedTasks.length > 0 ? (
+                          <>
+                            <Text style={[styles.attentionSectionTitle, { color: theme.textMuted }]}>
+                              PARKED FOR LATER
+                            </Text>
+                            <Text
+                              style={[
+                                styles.vzFieldHelper,
+                                { color: theme.textMuted, marginBottom: spacing.sm },
+                              ]}>
+                              Still here — they just do not need your attention yet.
+                            </Text>
+                            <AttentionTaskList>
+                              {attentionParkedTasks.map((task) =>
+                                renderAttentionTaskCard(task, false),
+                              )}
+                            </AttentionTaskList>
+                            <AttentionBrainDumpSave
+                              parkedCount={attentionParkedTasks.length}
+                              needsSave={parkedNeedsSave}
+                              status={brainDumpSaveStatus}
+                              onSave={saveParkedToBrainDumpNow}
+                            />
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[styles.attentionSectionTitle, { color: theme.textMuted }]}>
+                          YOUR OPEN THINGS
+                        </Text>
                         <Text
                           style={[
-                            styles.vzFieldHelper,
-                            { color: theme.textMuted, marginTop: spacing.xs },
+                            styles.stageSupport,
+                            { color: theme.textSecondary, marginBottom: spacing.xs },
                           ]}>
-                          So they do not have to stay in your head.
+                          Choose what deserves your attention first.
                         </Text>
-                      </View>
-                    ) : null}
+                        {attentionOpenTasks.length >= 2 ? (
+                          <Text
+                            style={[
+                              styles.vzFieldHelper,
+                              { color: theme.textMuted, marginBottom: spacing.sm },
+                            ]}>
+                            You only need to choose one.
+                          </Text>
+                        ) : null}
+                        <AttentionTaskList>
+                          {attentionOpenTasks.map((task) => renderAttentionTaskCard(task, false))}
+                        </AttentionTaskList>
+                        <AttentionBrainDumpSave
+                          parkedCount={attentionParkedTasks.length}
+                          needsSave={parkedNeedsSave}
+                          status={brainDumpSaveStatus}
+                          onSave={saveParkedToBrainDumpNow}
+                        />
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
@@ -8655,31 +8731,11 @@ export default function CantStartScreen() {
                 )}
 
                 {attentionCompletedTasks.length > 0 ? (
-                  <View style={{ marginTop: spacing.lg }}>
+                  <View style={{ marginTop: spacing.md }}>
                     <Text style={[styles.attentionSectionTitle, { color: theme.textMuted }]}>DONE</Text>
-                    <AttentionCardsGrid columns={attentionCardColumns} gap={attentionCardGap}>
-                      {attentionCompletedTasks.map((task) => (
-                        <AttentionTaskCard
-                          key={task.id}
-                          task={task}
-                          active={false}
-                          parked={false}
-                          editing={false}
-                          editTitle=""
-                          editDeadline=""
-                          onEditTitleChange={() => {}}
-                          onEditDeadlineChange={() => {}}
-                          onStartEdit={() => {}}
-                          onSaveEdit={() => {}}
-                          onCancelEdit={() => {}}
-                          onPriorityChange={() => {}}
-                          onMakeActive={() => {}}
-                          onMarkDone={() => {}}
-                          onRestore={() => restoreAttentionTask(task.id)}
-                          onDelete={() => deleteAttentionTask(task.id)}
-                        />
-                      ))}
-                    </AttentionCardsGrid>
+                    <AttentionTaskList>
+                      {attentionCompletedTasks.map((task) => renderAttentionTaskCard(task, false))}
+                    </AttentionTaskList>
                   </View>
                 ) : null}
 
@@ -10355,7 +10411,7 @@ const styles = StyleSheet.create({
   attentionComposer: {
     width: '100%',
     gap: spacing.xs,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   attentionComposerRow: {
     flexDirection: 'row',
@@ -10411,24 +10467,56 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontWeight: '700',
   },
-  attentionTaskCard: {
-    flex: 1,
+  attentionTaskList: {
+    width: '100%',
+    gap: spacing.xs + 2,
+    marginBottom: spacing.sm,
+  },
+  attentionTaskRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
     borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    gap: spacing.sm,
+    width: '100%',
   },
-  attentionTaskCardTop: {
+  attentionTaskMain: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 220,
+    minWidth: 0,
+    gap: 2,
+  },
+  attentionTaskActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  attentionTaskCardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: spacing.xs,
+    flexShrink: 0,
     marginLeft: 'auto',
+  },
+  attentionTaskMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: 2,
+  },
+  attentionPriorityBadge: {
+    minHeight: 22,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  attentionPriorityBadgeText: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   attentionActiveBadge: {
     ...typography.caption,
@@ -10441,9 +10529,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   attentionTaskTitle: {
-    ...typography.body,
+    ...typography.bodySmall,
     fontWeight: '700',
-    lineHeight: 22,
+    lineHeight: 20,
   },
   attentionMetaText: {
     ...typography.caption,
@@ -10451,16 +10539,11 @@ const styles = StyleSheet.create({
   },
   attentionActiveSupport: {
     ...typography.caption,
-    lineHeight: 18,
-  },
-  attentionTaskFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: spacing.xs,
+    lineHeight: 16,
+    marginTop: 2,
   },
   attentionTaskEdit: {
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   attentionTaskEditActions: {
     flexDirection: 'row',
@@ -10468,18 +10551,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   attentionMarkDone: {
-    minHeight: 40,
-    paddingHorizontal: spacing.md,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm + 2,
     borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   attentionMarkDoneText: {
-    ...typography.bodySmall,
+    ...typography.caption,
     fontWeight: '700',
   },
   attentionDoneBanner: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     gap: 2,
   },
   attentionKeepActive: {
@@ -10487,7 +10570,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     flexShrink: 0,
-    minHeight: 44,
+    minHeight: 36,
     paddingHorizontal: spacing.xs,
   },
   attentionKeepIcon: {
@@ -10503,7 +10586,29 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '700',
     letterSpacing: 0.8,
+    marginBottom: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  attentionBrainDumpSave: {
+    marginTop: spacing.xs,
     marginBottom: spacing.sm,
+    gap: 2,
+  },
+  attentionBrainDumpBtn: {
+    alignSelf: 'flex-start',
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingVertical: spacing.xs,
+    paddingRight: spacing.sm,
+  },
+  attentionBrainDumpBtnText: {
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  attentionBrainDumpConfirm: {
+    ...typography.caption,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   attentionCtaBtn: {
     width: '100%',
