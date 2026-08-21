@@ -31,6 +31,16 @@ export const activitySourceLabels: Record<ActivitySource, string> = {
   'home-care': 'Home',
 };
 
+export const activitySourceEmojis: Record<ActivitySource, string> = {
+  'tiny-win': '✨',
+  water: '💧',
+  sleep: '🌙',
+  mood: '💭',
+  focus: '⏱',
+  'self-care': '🫶',
+  'home-care': '🏠',
+};
+
 function meaningfulXp(xp: number | undefined): number | undefined {
   if (typeof xp !== 'number' || !Number.isFinite(xp) || xp <= 0) return undefined;
   return xp;
