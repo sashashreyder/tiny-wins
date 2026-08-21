@@ -116,7 +116,7 @@ export function MonthCalendar({
                 style={({ pressed }) => [
                   styles.cell,
                   isSelected && {
-                    backgroundColor: theme.accentTertiary,
+                    backgroundColor: theme.accent,
                     borderColor: theme.accent,
                   },
                   isToday && !isSelected && {
@@ -129,21 +129,37 @@ export function MonthCalendar({
                     style={[
                       styles.dayNumber,
                       {
-                        color: muted ? theme.textMuted : theme.text,
+                        color: isSelected
+                          ? theme.selectedForeground
+                          : muted
+                            ? theme.textMuted
+                            : theme.text,
                         fontWeight: isSelected || isToday ? '700' : '500',
                       },
                     ]}>
                     {cell.day}
                   </Text>
                   {isHard ? (
-                    <Text style={[styles.hardMark, { color: theme.accent }]}>♡</Text>
+                    <Text
+                      style={[
+                        styles.hardMark,
+                        { color: isSelected ? theme.selectedForeground : theme.accent },
+                      ]}>
+                      ♡
+                    </Text>
                   ) : null}
                 </View>
                 {count > 0 ? (
                   <Text
                     style={[
                       styles.count,
-                      { color: muted ? theme.textMuted : theme.textSecondary },
+                      {
+                        color: isSelected
+                          ? theme.selectedForegroundMuted
+                          : muted
+                            ? theme.textMuted
+                            : theme.textSecondary,
+                      },
                     ]}>
                     • {count}
                   </Text>
