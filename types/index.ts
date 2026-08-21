@@ -213,12 +213,22 @@ export interface ComebackNote {
   createdAt: string;
 }
 
+export interface FocusDistraction {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+/** Legacy sessions stored plain strings; new sprints store FocusDistraction objects. */
+export type FocusDistractionEntry = string | FocusDistraction;
+
 export interface FocusSession {
   id: string;
   title: string;
   duration: number;
   result?: FocusResult;
-  distractions: string[];
+  /** Present on new sprints. Historical sessions may omit this or store plain strings. */
+  distractions?: FocusDistractionEntry[];
   xp: number;
   createdAt: string;
 }
