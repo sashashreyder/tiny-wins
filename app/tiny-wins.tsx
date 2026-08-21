@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -13,6 +13,7 @@ import { GradientButton } from '@/components/design-system/Buttons';
 import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
 import { SupportiveMessage } from '@/components/design-system/Feedback';
+import { FloatingPanel, OverlayAnchor } from '@/components/tiny-wins/FloatingPanel';
 import { MonthCalendar } from '@/components/tiny-wins/MonthCalendar';
 import { tinyWinTemplates } from '@/data/content';
 import { useAppTheme } from '@/hooks/useAppTheme';
@@ -98,6 +99,10 @@ export default function TinyWinsScreen() {
   const [custom, setCustom] = useState('');
   const [note, setNote] = useState('');
   const [showAllWins, setShowAllWins] = useState(false);
+  const [calendarAnchor, setCalendarAnchor] = useState<OverlayAnchor | undefined>();
+  const [whyAnchor, setWhyAnchor] = useState<OverlayAnchor | undefined>();
+  const calendarTriggerRef = useRef<View>(null);
+  const whyTriggerRef = useRef<View>(null);
 
   const activityTimeline = useMemo(
     () =>
@@ -184,10 +189,38 @@ export default function TinyWinsScreen() {
   };
 
   const toggleCalendar = () => {
-    setCalendarOpen((open) => {
-      if (!open) setVisibleMonth(monthFromDateKey(selectedDateKey));
-      return !open;
-    });
+    if (calendarOpen) {
+      setCalendarOpen(false);
+      return;
+    }
+    setHardWhyOpen(false);
+    setVisibleMonth(monthFromDateKey(selectedDateKey));
+    const node = calendarTriggerRef.current;
+    if (node?.measureInWindow) {
+      node.measureInWindow((x, y, width, height) => {
+        setCalendarAnchor({ x, y, width, height });
+        setCalendarOpen(true);
+      });
+      return;
+    }
+    setCalendarOpen(true);
+  };
+
+  const toggleHardWhy = () => {
+    if (hardWhyOpen) {
+      setHardWhyOpen(false);
+      return;
+    }
+    setCalendarOpen(false);
+    const node = whyTriggerRef.current;
+    if (node?.measureInWindow) {
+      node.measureInWindow((x, y, width, height) => {
+        setWhyAnchor({ x, y, width, height });
+        setHardWhyOpen(true);
+      });
+      return;
+    }
+    setHardWhyOpen(true);
   };
 
   const logWin = (title: string) => {
@@ -208,17 +241,15 @@ export default function TinyWinsScreen() {
               </Text>
             </View>
 
-            <GlassCard
-              style={
-                calendarOpen ? [styles.dateCard, styles.dateCardWithCalendar] : styles.dateCard
-              }>
+            <GlassCard style={styles.dateCard}>
               <View style={isWide ? styles.dateTopWide : styles.dateTopStack}>
-                <Pressable
-                  onPress={toggleCalendar}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: calendarOpen }}
-                  accessibilityLabel={`${formatWeekdayLongDate(selectedDateKey)}. ${calendarOpen ? 'Hide calendar' : 'View calendar'}`}
-                  style={({ pressed }) => [styles.dateSummary, pressed && styles.pressed]}>
+                <View ref={calendarTriggerRef} collapsable={false} style={styles.dateSummary}>
+                  <Pressable
+                    onPress={toggleCalendar}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: calendarOpen }}
+                    accessibilityLabel={`${formatWeekdayLongDate(selectedDateKey)}. ${calendarOpen ? 'Hide calendar' : 'View calendar'}`}
+                    style={({ pressed }) => [styles.dateSummaryPress, pressed && styles.pressed]}>
                   <View style={styles.dateLine}>
                     <Text style={[styles.dateTitle, { color: theme.text }]}>
                       {formatWeekdayLongDate(selectedDateKey)}
@@ -233,15 +264,17 @@ export default function TinyWinsScreen() {
                   <Text style={[styles.calendarAction, { color: theme.accent }]}>
                     {calendarOpen ? 'Hide calendar ↑' : 'View calendar ↓'}
                   </Text>
-                </Pressable>
+                  </Pressable>
+                </View>
 
                 {isToday ? (
                   <HardDayPanel
                     theme={theme}
                     selected={selectedIsHard}
                     whyOpen={hardWhyOpen}
+                    whyRef={whyTriggerRef}
                     onToggle={() => setHardDay(todayKey, !selectedIsHard)}
-                    onToggleWhy={() => setHardWhyOpen((open) => !open)}
+                    onToggleWhy={toggleHardWhy}
                     wide={isWide}
                   />
                 ) : selectedIsHard ? (
@@ -299,9 +332,22 @@ export default function TinyWinsScreen() {
               </View>
             </GlassCard>
 
-            {calendarOpen ? (
-              <GlassCard
-                style={isWide ? [styles.calendarPanel, styles.calendarPanelWide] : styles.calendarPanel}>
+            <FloatingPanel
+              visible={calendarOpen}
+              onClose={() => setCalendarOpen(false)}
+              anchor={calendarAnchor}
+              panelWidth={392}
+              isWide={isWide}
+              align="left">
+              <View
+                style={[
+                  styles.calendarPopover,
+                  {
+                    backgroundColor: theme.backgroundAlt,
+                    borderColor: theme.surfaceBorder,
+                    shadowColor: theme.text,
+                  },
+                ]}>
                 <MonthCalendar
                   year={visibleMonth.year}
                   monthIndex={visibleMonth.monthIndex}
@@ -320,8 +366,31 @@ export default function TinyWinsScreen() {
                   }}
                   canGoNextMonth={canGoNextMonth}
                 />
-              </GlassCard>
-            ) : null}
+              </View>
+            </FloatingPanel>
+
+            <FloatingPanel
+              visible={hardWhyOpen}
+              onClose={() => setHardWhyOpen(false)}
+              anchor={whyAnchor}
+              panelWidth={300}
+              isWide={isWide}
+              align="right">
+              <View
+                style={[
+                  styles.whyPopover,
+                  {
+                    backgroundColor: theme.backgroundAlt,
+                    borderColor: theme.surfaceBorder,
+                    shadowColor: theme.text,
+                  },
+                ]}>
+                <Text style={[styles.whyBody, { color: theme.textSecondary }]}>
+                  Some days take more effort than others. Marking a hard day helps the app
+                  recognize that small actions may have taken more energy than usual.
+                </Text>
+              </View>
+            </FloatingPanel>
 
             {isToday ? (
               <View style={styles.section}>
@@ -465,6 +534,7 @@ function HardDayPanel({
   theme,
   selected,
   whyOpen,
+  whyRef,
   onToggle,
   onToggleWhy,
   wide,
@@ -472,6 +542,7 @@ function HardDayPanel({
   theme: AppTheme;
   selected: boolean;
   whyOpen: boolean;
+  whyRef: RefObject<View | null>;
   onToggle: () => void;
   onToggleWhy: () => void;
   wide: boolean;
@@ -486,47 +557,31 @@ function HardDayPanel({
         onPress={onToggle}
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        accessibilityLabel={selected ? 'Hard day marked' : 'Mark today as hard'}
+        accessibilityLabel={selected ? 'Hard day marked' : 'Mark as hard day'}
         style={({ pressed }) => [
           styles.hardBtn,
           {
             borderColor: selected ? theme.accent : theme.surfaceBorder,
-            backgroundColor: selected ? theme.accent : theme.surface,
+            backgroundColor: theme.surface,
           },
           pressed && styles.pressed,
         ]}>
-        <View style={styles.hardBtnInner}>
-          <Text
-            style={[
-              styles.hardBtnLabel,
-              { color: theme.text, opacity: selected ? 0 : 1 },
-            ]}>
-            Mark today as hard
-          </Text>
-          <Text
-            style={[
-              styles.hardBtnLabel,
-              styles.hardBtnOverlay,
-              { color: theme.selectedForeground, opacity: selected ? 1 : 0 },
-            ]}>
-            ✓ Hard day marked
-          </Text>
-        </View>
-      </Pressable>
-      <Pressable
-        onPress={onToggleWhy}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: whyOpen }}
-        hitSlop={6}
-        style={({ pressed }) => [pressed && styles.pressed]}>
-        <Text style={[styles.whyLink, { color: theme.accent }]}>Why? →</Text>
-      </Pressable>
-      {whyOpen ? (
-        <Text style={[styles.whyBody, { color: theme.textSecondary }]}>
-          Some days take more effort than others. Marking a hard day helps the app recognize that
-          small actions may have taken more energy than usual.
+        <Text
+          numberOfLines={1}
+          style={[styles.hardBtnLabel, { color: selected ? theme.accent : theme.text }]}>
+          {selected ? '✓ Hard day marked' : '♡ Mark as hard day'}
         </Text>
-      ) : null}
+      </Pressable>
+      <View ref={whyRef} collapsable={false}>
+        <Pressable
+          onPress={onToggleWhy}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: whyOpen }}
+          hitSlop={6}
+          style={({ pressed }) => [styles.whyLinkHit, pressed && styles.pressed]}>
+          <Text style={[styles.whyLink, { color: theme.accent }]}>Why? →</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -673,8 +728,7 @@ const styles = StyleSheet.create({
   intro: { marginBottom: spacing.xl },
   headline: { ...typography.h1 },
   sub: { ...typography.body, marginTop: spacing.xs },
-  dateCard: { marginBottom: spacing.xl },
-  dateCardWithCalendar: { marginBottom: spacing.sm },
+  dateCard: { marginBottom: spacing.xl, zIndex: 2 },
   dateTopWide: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -684,6 +738,8 @@ const styles = StyleSheet.create({
   dateSummary: {
     flex: 1,
     minWidth: 0,
+  },
+  dateSummaryPress: {
     minHeight: 44,
   },
   dateLine: {
@@ -701,36 +757,47 @@ const styles = StyleSheet.create({
   },
   hardDayPanel: { gap: 4 },
   hardDayPanelWide: {
-    width: 236,
+    width: 190,
     flexShrink: 0,
   },
   hardDayTitle: { ...typography.bodySmall, fontWeight: '700' },
   hardDayHint: { ...typography.caption },
   hardBtn: {
-    alignSelf: 'flex-start',
+    width: 186,
+    height: 40,
     marginTop: 4,
     borderWidth: 1.5,
     borderRadius: radii.full,
-    minHeight: 40,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-  },
-  hardBtnInner: {
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
   },
   hardBtnLabel: {
     ...typography.caption,
     fontWeight: '700',
     textAlign: 'center',
   },
-  hardBtnOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
+  whyLinkHit: { alignSelf: 'flex-start', minHeight: 28, justifyContent: 'center' },
+  whyLink: { ...typography.caption, fontWeight: '700' },
+  whyPopover: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.sm,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 16,
   },
-  whyLink: { ...typography.caption, fontWeight: '700', marginTop: 4 },
-  whyBody: { ...typography.caption, marginTop: 4 },
+  whyBody: { ...typography.caption },
+  calendarPopover: {
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.sm,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    elevation: 16,
+  },
   pastHard: { ...typography.caption, fontWeight: '700', marginTop: 2 },
   dayNav: {
     flexDirection: 'row',
@@ -754,16 +821,6 @@ const styles = StyleSheet.create({
   },
   dayNavLabel: { ...typography.caption, fontWeight: '600' },
   navDisabled: { opacity: 0.45 },
-  calendarPanel: {
-    width: '100%',
-    marginBottom: spacing.xl,
-    alignSelf: 'stretch',
-  },
-  calendarPanelWide: {
-    width: 400,
-    maxWidth: 400,
-    alignSelf: 'flex-start',
-  },
   section: { marginBottom: spacing.xl },
   tabs: {
     flexDirection: 'row',
