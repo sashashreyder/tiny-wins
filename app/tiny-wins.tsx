@@ -16,6 +16,7 @@ import {
   groupActivitiesByDate,
 } from '@/lib/activityTimeline';
 import {
+  dateFromDateKey,
   formatTimeForDisplay,
   formatWeekdayLongDate,
   isMonthAfterDateKey,
@@ -31,6 +32,8 @@ import { ActivityEntry, TinyWinCategory } from '@/types';
 const CONTENT_MAX_WIDTH = 1040;
 const categories = Object.keys(tinyWinTemplates) as TinyWinCategory[];
 
+type LogMode = 'quick' | 'custom';
+
 function formatCountedSummary(count: number, isToday: boolean): string {
   if (count === 0) {
     return isToday ? 'Nothing counted yet' : 'Nothing counted';
@@ -40,7 +43,14 @@ function formatCountedSummary(count: number, isToday: boolean): string {
 }
 
 function categoryLabel(category: TinyWinCategory): string {
-  return category.replace('-', ' ');
+  const spaced = category.replace(/-/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function formatNavDay(dateKey: string): string {
+  const date = dateFromDateKey(dateKey);
+  if (!date) return dateKey;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export default function TinyWinsScreen() {
@@ -60,6 +70,7 @@ export default function TinyWinsScreen() {
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey);
   const [visibleMonth, setVisibleMonth] = useState(() => monthFromDateKey(todayKey));
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [logMode, setLogMode] = useState<LogMode>('quick');
   const [category, setCategory] = useState<TinyWinCategory>('self-care');
   const [custom, setCustom] = useState('');
   const [note, setNote] = useState('');
@@ -111,6 +122,9 @@ export default function TinyWinsScreen() {
   const selectedCount = activityCountByDate[selectedDateKey] ?? 0;
   const activitiesForSelectedDay = activitiesByDate[selectedDateKey] ?? [];
   const selectedIsHard = dayMetadata?.[selectedDateKey]?.isHardDay ?? false;
+  const previousDateKey = shiftDateKey(selectedDateKey, -1);
+  const nextDateKey = shiftDateKey(selectedDateKey, 1);
+  const nextIsFuture = nextDateKey > todayKey;
   const nextVisibleMonth = shiftMonth(visibleMonth.year, visibleMonth.monthIndex, 1);
   const canGoNextMonth = !isMonthAfterDateKey(
     nextVisibleMonth.year,
@@ -129,13 +143,12 @@ export default function TinyWinsScreen() {
   };
 
   const goToPreviousDay = () => {
-    selectDate(shiftDateKey(selectedDateKey, -1));
+    selectDate(previousDateKey);
   };
 
   const goToNextDay = () => {
-    const next = shiftDateKey(selectedDateKey, 1);
-    if (next > todayKey) return;
-    selectDate(next);
+    if (nextIsFuture) return;
+    selectDate(nextDateKey);
   };
 
   const toggleCalendar = () => {
@@ -156,10 +169,12 @@ export default function TinyWinsScreen() {
       <ScreenContainer>
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.page}>
-            <Text style={[styles.headline, { color: theme.text }]}>Tiny is real.</Text>
-            <Text style={[styles.sub, { color: theme.textSecondary }]}>
-              Log small actions. Starting counts. Finishing optional.
-            </Text>
+            <View style={styles.intro}>
+              <Text style={[styles.headline, { color: theme.text }]}>Tiny is real.</Text>
+              <Text style={[styles.sub, { color: theme.textSecondary }]}>
+                Log small actions. Starting counts. Finishing optional.
+              </Text>
+            </View>
 
             <GlassCard style={styles.dateCard}>
               {isToday ? (
@@ -171,64 +186,91 @@ export default function TinyWinsScreen() {
                 accessibilityState={{ expanded: calendarOpen }}
                 accessibilityLabel={`${formatWeekdayLongDate(selectedDateKey)}. ${calendarOpen ? 'Hide' : 'Show'} calendar`}
                 style={({ pressed }) => [styles.dateRow, pressed && styles.pressed]}>
-                <View style={styles.dateTextWrap}>
-                  <Text style={[styles.dateTitle, { color: theme.text }]}>
-                    {formatWeekdayLongDate(selectedDateKey)}
-                  </Text>
-                  <Text style={[styles.dateHint, { color: theme.textMuted }]}>
-                    {calendarOpen ? 'Tap to hide calendar' : 'Tap to browse history'}
-                  </Text>
-                </View>
+                <Text style={[styles.dateTitle, { color: theme.text }]} numberOfLines={1}>
+                  {formatWeekdayLongDate(selectedDateKey)}
+                </Text>
                 <Text style={styles.calendarIcon}>{calendarOpen ? '📅 ▴' : '📅'}</Text>
               </Pressable>
               <Text style={[styles.countSummary, { color: theme.textSecondary }]}>
                 {formatCountedSummary(selectedCount, isToday)}
               </Text>
 
+              {isToday ? (
+                <View style={styles.hardDayInCard}>
+                  <Pressable
+                    onPress={() => setHardDay(todayKey, !selectedIsHard)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedIsHard }}
+                    accessibilityLabel={selectedIsHard ? 'Hard day marked' : 'Mark today as a hard day'}
+                    style={({ pressed }) => [
+                      styles.hardChip,
+                      {
+                        borderColor: selectedIsHard ? theme.accent : theme.surfaceBorder,
+                        backgroundColor: selectedIsHard ? theme.accentTertiary : 'transparent',
+                      },
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text style={[styles.hardChipLabel, { color: theme.text }]}>
+                      {selectedIsHard ? '♥ Hard day marked' : '♡ Hard day'}
+                    </Text>
+                  </Pressable>
+                  <Text style={[styles.hardDayHint, { color: theme.textMuted }]}>
+                    Small things deserve extra credit on hard days.
+                  </Text>
+                </View>
+              ) : selectedIsHard ? (
+                <Text style={[styles.hardDayHint, { color: theme.textSecondary }]}>♥ Hard day</Text>
+              ) : null}
+
               <View style={styles.dayNav}>
                 <Pressable
                   onPress={goToPreviousDay}
+                  hitSlop={6}
                   accessibilityRole="button"
-                  accessibilityLabel="Previous day"
-                  style={({ pressed }) => [
-                    styles.dayNavBtn,
-                    { borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundAlt },
-                    pressed && styles.pressed,
-                  ]}>
-                  <Text style={[styles.dayNavLabel, { color: theme.text }]}>‹ Prev</Text>
+                  accessibilityLabel={`Previous day, ${formatNavDay(previousDateKey)}`}
+                  style={({ pressed }) => [styles.dayNavSide, pressed && styles.pressed]}>
+                  <Text style={[styles.dayNavLabel, { color: theme.text }]} numberOfLines={1}>
+                    ← {formatNavDay(previousDateKey)}
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={goToToday}
+                  hitSlop={6}
                   accessibilityRole="button"
                   accessibilityLabel="Today"
                   style={({ pressed }) => [
-                    styles.dayNavBtn,
-                    {
-                      borderColor: isToday ? theme.accent : theme.surfaceBorder,
-                      backgroundColor: isToday ? theme.accentTertiary : theme.backgroundAlt,
-                    },
+                    styles.dayNavToday,
+                    isToday && { backgroundColor: theme.accentTertiary },
                     pressed && styles.pressed,
-                  ]}>
-                  <Text style={[styles.dayNavLabel, { color: theme.text }]}>Today</Text>
-                </Pressable>
-                <Pressable
-                  onPress={isToday ? undefined : goToNextDay}
-                  disabled={isToday}
-                  accessibilityRole="button"
-                  accessibilityLabel="Next day"
-                  accessibilityState={{ disabled: isToday }}
-                  style={({ pressed }) => [
-                    styles.dayNavBtn,
-                    { borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundAlt },
-                    isToday && styles.navDisabled,
-                    pressed && !isToday && styles.pressed,
                   ]}>
                   <Text
                     style={[
                       styles.dayNavLabel,
-                      { color: isToday ? theme.textMuted : theme.text },
+                      { color: theme.text, fontWeight: isToday ? '700' : '600' },
                     ]}>
-                    Next ›
+                    Today
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={nextIsFuture ? undefined : goToNextDay}
+                  disabled={nextIsFuture}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Next day, ${formatNavDay(nextDateKey)}`}
+                  accessibilityState={{ disabled: nextIsFuture }}
+                  style={({ pressed }) => [
+                    styles.dayNavSide,
+                    styles.dayNavRight,
+                    nextIsFuture && styles.navDisabled,
+                    pressed && !nextIsFuture && styles.pressed,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.dayNavLabel,
+                      { color: nextIsFuture ? theme.textMuted : theme.text },
+                    ]}
+                    numberOfLines={1}>
+                    {formatNavDay(nextDateKey)} →
                   </Text>
                 </Pressable>
               </View>
@@ -257,106 +299,143 @@ export default function TinyWinsScreen() {
               ) : null}
             </GlassCard>
 
-            <View style={styles.hardDayBlock}>
-              {isToday ? (
-                <>
-                  <Text style={[styles.hardDayQuestion, { color: theme.text }]}>Hard day?</Text>
-                  <TagPill
-                    label={selectedIsHard ? 'Hard day marked ✓' : 'Mark today as a hard day'}
-                    selected={selectedIsHard}
-                    onPress={() => setHardDay(todayKey, !selectedIsHard)}
-                  />
-                  <Text style={[styles.hardDayHint, { color: theme.textMuted }]}>
-                    Small things deserve extra credit on hard days.
-                  </Text>
-                </>
-              ) : (
-                <Text style={[styles.hardDayHint, { color: theme.textSecondary }]}>
-                  {selectedIsHard ? 'Hard day ✓' : 'Not marked as a hard day'}
-                </Text>
-              )}
-            </View>
-
             {isToday ? (
-              <>
+              <View style={styles.section}>
                 <SectionHeader title="Add a tiny win" />
-                <Text style={[styles.subhead, { color: theme.text }]}>Quick log</Text>
-                <Text style={[styles.helper, { color: theme.textMuted }]}>
-                  Pick a category, then tap something that counted.
+                <View
+                  style={[
+                    styles.modeSwitch,
+                    { borderColor: theme.surfaceBorder, backgroundColor: theme.surface },
+                  ]}>
+                  <Pressable
+                    onPress={() => setLogMode('quick')}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: logMode === 'quick' }}
+                    style={({ pressed }) => [
+                      styles.modeBtn,
+                      logMode === 'quick' && { backgroundColor: theme.accentTertiary },
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.modeLabel,
+                        { color: theme.text, fontWeight: logMode === 'quick' ? '700' : '600' },
+                      ]}>
+                      Quick log
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setLogMode('custom')}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: logMode === 'custom' }}
+                    style={({ pressed }) => [
+                      styles.modeBtn,
+                      logMode === 'custom' && { backgroundColor: theme.accentTertiary },
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.modeLabel,
+                        { color: theme.text, fontWeight: logMode === 'custom' ? '700' : '600' },
+                      ]}>
+                      Add my own
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {logMode === 'quick' ? (
+                  <View style={styles.modeBody}>
+                    <Text style={[styles.fieldLabel, { color: theme.text }]}>What kind of win?</Text>
+                    <Text style={[styles.helper, { color: theme.textMuted }]}>
+                      Pick a category to see quick options.
+                    </Text>
+                    <View style={styles.pillGrid}>
+                      {categories.map((cat) => (
+                        <TagPill
+                          key={cat}
+                          label={categoryLabel(cat)}
+                          selected={category === cat}
+                          onPress={() => setCategory(cat)}
+                        />
+                      ))}
+                    </View>
+                    <Text style={[styles.fieldLabel, { color: theme.text }]}>Quick options</Text>
+                    <View style={styles.pillGrid}>
+                      {tinyWinTemplates[category].map((title) => (
+                        <TagPill key={title} label={title} onPress={() => logWin(title)} />
+                      ))}
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.modeBody}>
+                    <Text style={[styles.helper, { color: theme.textMuted }]}>
+                      Anything small that mattered counts.
+                    </Text>
+                    <TextInput
+                      value={custom}
+                      onChangeText={setCustom}
+                      placeholder="What did you do?"
+                      placeholderTextColor={theme.textMuted}
+                      style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder }]}
+                    />
+                    <TextInput
+                      value={note}
+                      onChangeText={setNote}
+                      placeholder="Optional note"
+                      placeholderTextColor={theme.textMuted}
+                      style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder }]}
+                    />
+                    <GradientButton
+                      label="Log tiny win"
+                      onPress={() => custom.trim() && logWin(custom.trim())}
+                      small
+                    />
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Pressable
+                onPress={goToToday}
+                accessibilityRole="button"
+                accessibilityLabel="Back to today to log a win"
+                style={({ pressed }) => [
+                  styles.backToToday,
+                  { borderColor: theme.surfaceBorder },
+                  pressed && styles.pressed,
+                ]}>
+                <Text style={[styles.backToTodayLabel, { color: theme.text }]}>
+                  Back to today to log a win →
                 </Text>
-                <View style={styles.pillGrid}>
-                  {categories.map((cat) => (
-                    <TagPill
-                      key={cat}
-                      label={categoryLabel(cat)}
-                      selected={category === cat}
-                      onPress={() => setCategory(cat)}
+              </Pressable>
+            )}
+
+            <View style={styles.section}>
+              <SectionHeader title={isToday ? 'Today’s wins' : 'Wins from this day'} />
+              {activitiesForSelectedDay.length === 0 ? (
+                <View style={styles.emptyDay}>
+                  <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                    {isToday
+                      ? 'Nothing counted yet — and the day is not over.'
+                      : 'Nothing was logged on this day.'}
+                  </Text>
+                  {!isToday ? (
+                    <Text style={[styles.emptySub, { color: theme.textMuted }]}>
+                      That does not mean nothing happened.
+                    </Text>
+                  ) : null}
+                </View>
+              ) : (
+                <View style={styles.timeline}>
+                  {activitiesForSelectedDay.map((entry, index) => (
+                    <DayTimelineRow
+                      key={entry.id}
+                      entry={entry}
+                      showDivider={index < activitiesForSelectedDay.length - 1}
                     />
                   ))}
                 </View>
-                <View style={styles.pillGrid}>
-                  {tinyWinTemplates[category].map((title) => (
-                    <TagPill key={title} label={title} onPress={() => logWin(title)} />
-                  ))}
-                </View>
-
-                <Text style={[styles.subhead, { color: theme.text }]}>Add your own</Text>
-                <Text style={[styles.helper, { color: theme.textMuted }]}>
-                  Anything small that mattered counts.
-                </Text>
-                <GlassCard>
-                  <TextInput
-                    value={custom}
-                    onChangeText={setCustom}
-                    placeholder="What did you do?"
-                    placeholderTextColor={theme.textMuted}
-                    style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder }]}
-                  />
-                  <TextInput
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder="Optional note"
-                    placeholderTextColor={theme.textMuted}
-                    style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder }]}
-                  />
-                  <GradientButton
-                    label="Log tiny win"
-                    onPress={() => custom.trim() && logWin(custom.trim())}
-                    small
-                  />
-                </GlassCard>
-              </>
-            ) : (
-              <GradientButton
-                label="Back to today to log a win →"
-                onPress={goToToday}
-                variant="secondary"
-                small
-              />
-            )}
-
-            <SectionHeader
-              title={isToday ? 'Today’s wins' : 'Wins from this day'}
-              subtitle={formatCountedSummary(selectedCount, isToday)}
-            />
-            {activitiesForSelectedDay.length === 0 ? (
-              <GlassCard>
-                <Text style={{ color: theme.text, fontWeight: '600' }}>
-                  {isToday
-                    ? 'Nothing counted yet — and the day is not over.'
-                    : 'Nothing was logged on this day.'}
-                </Text>
-                {!isToday ? (
-                  <Text style={{ color: theme.textMuted, marginTop: 4, ...typography.bodySmall }}>
-                    That does not mean nothing happened.
-                  </Text>
-                ) : null}
-              </GlassCard>
-            ) : (
-              activitiesForSelectedDay.map((entry) => (
-                <DayTimelineRow key={entry.id} entry={entry} />
-              ))
-            )}
+              )}
+            </View>
 
             <SupportiveMessage message="Progress is not only finished projects." />
           </View>
@@ -366,7 +445,13 @@ export default function TinyWinsScreen() {
   );
 }
 
-function DayTimelineRow({ entry }: { entry: ActivityEntry }) {
+function DayTimelineRow({
+  entry,
+  showDivider,
+}: {
+  entry: ActivityEntry;
+  showDivider: boolean;
+}) {
   const theme = useAppTheme();
   const time = formatTimeForDisplay(entry.createdAt);
   const source = activitySourceLabels[entry.source];
@@ -375,19 +460,25 @@ function DayTimelineRow({ entry }: { entry: ActivityEntry }) {
   const meta = [source, showXp ? `+${entry.xp} XP` : null].filter(Boolean).join(' · ');
 
   return (
-    <GlassCard style={styles.winRow}>
-      <View style={styles.winText}>
-        {time ? (
-          <Text style={{ color: theme.textMuted, ...typography.caption }}>{time}</Text>
-        ) : null}
-        <Text style={{ color: theme.text, fontWeight: '600' }}>
-          {emoji} {entry.title}
-        </Text>
-        {meta ? (
-          <Text style={{ color: theme.textMuted, ...typography.caption }}>{meta}</Text>
-        ) : null}
+    <View>
+      <View style={styles.timelineRow}>
+        <View style={[styles.timelineDot, { backgroundColor: theme.accentTertiary }]} />
+        <View style={styles.winText}>
+          {time ? (
+            <Text style={[styles.timelineTime, { color: theme.textMuted }]}>{time}</Text>
+          ) : null}
+          <Text style={[styles.timelineTitle, { color: theme.text }]}>
+            {emoji} {entry.title}
+          </Text>
+          {meta ? (
+            <Text style={[styles.timelineMeta, { color: theme.textMuted }]}>{meta}</Text>
+          ) : null}
+        </View>
       </View>
-    </GlassCard>
+      {showDivider ? (
+        <View style={[styles.timelineDivider, { backgroundColor: theme.surfaceBorder }]} />
+      ) : null}
+    </View>
   );
 }
 
@@ -397,51 +488,81 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
     alignSelf: 'center',
-    gap: spacing.sm,
   },
+  intro: { marginBottom: spacing.lg },
   headline: { ...typography.h1 },
-  sub: { ...typography.body, marginBottom: spacing.sm },
-  dateCard: { marginBottom: spacing.xs },
+  sub: { ...typography.body, marginTop: spacing.xs },
+  dateCard: { marginBottom: spacing.lg },
   todayEyebrow: {
     ...typography.caption,
     fontWeight: '800',
     letterSpacing: 1,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
+    minHeight: 44,
   },
-  dateTextWrap: { flex: 1, minWidth: 0 },
-  dateTitle: { ...typography.h3 },
-  dateHint: { ...typography.caption, marginTop: 2 },
+  dateTitle: { ...typography.h3, flex: 1, minWidth: 0 },
   calendarIcon: { fontSize: 18 },
-  countSummary: { ...typography.bodySmall, marginTop: spacing.xs },
+  countSummary: { ...typography.bodySmall, marginTop: 2 },
+  hardDayInCard: { marginTop: spacing.sm, gap: 4 },
+  hardChip: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: radii.full,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  hardChipLabel: { ...typography.caption, fontWeight: '700' },
+  hardDayHint: { ...typography.caption },
   dayNav: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    minHeight: 44,
   },
-  dayNavBtn: {
+  dayNavSide: {
     flex: 1,
     minWidth: 0,
-    alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
-    borderRadius: radii.full,
-    borderWidth: 1,
   },
-  dayNavLabel: { ...typography.caption, fontWeight: '700' },
+  dayNavRight: { alignItems: 'flex-end' },
+  dayNavToday: {
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.full,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  dayNavLabel: { ...typography.caption, fontWeight: '600' },
   navDisabled: { opacity: 0.45 },
   calendarSlot: { marginTop: spacing.md },
-  hardDayBlock: { gap: spacing.xs, marginBottom: spacing.sm },
-  hardDayQuestion: { ...typography.bodySmall, fontWeight: '700' },
-  hardDayHint: { ...typography.caption },
+  section: { marginBottom: spacing.lg },
+  modeSwitch: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: radii.full,
+    padding: 3,
+    marginBottom: spacing.md,
+  },
+  modeBtn: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+  },
+  modeLabel: { ...typography.caption, fontWeight: '600' },
+  modeBody: { gap: spacing.xs },
+  fieldLabel: { ...typography.bodySmall, fontWeight: '700', marginTop: spacing.xs },
   helper: { ...typography.caption, marginBottom: spacing.xs },
-  subhead: { ...typography.h3, marginTop: spacing.xs },
   pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
   input: {
     borderWidth: 1,
@@ -450,7 +571,32 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     ...typography.body,
   },
-  winRow: { marginBottom: spacing.xs },
-  winText: { flex: 1, gap: 2 },
+  backToToday: {
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    marginBottom: spacing.lg,
+  },
+  backToTodayLabel: { ...typography.bodySmall, fontWeight: '700' },
+  emptyDay: { paddingVertical: spacing.sm },
+  emptyTitle: { ...typography.body, fontWeight: '600' },
+  emptySub: { ...typography.bodySmall, marginTop: 4 },
+  timeline: { marginTop: spacing.xs },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: 10,
+  },
+  timelineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 6,
+  },
+  winText: { flex: 1, minWidth: 0, gap: 2 },
+  timelineTime: { ...typography.caption },
+  timelineTitle: { ...typography.body, fontWeight: '600' },
+  timelineMeta: { ...typography.caption },
+  timelineDivider: { height: StyleSheet.hairlineWidth, marginLeft: 20 },
   pressed: { opacity: 0.88 },
 });
