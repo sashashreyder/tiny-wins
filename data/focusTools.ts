@@ -26,7 +26,7 @@ export const FOCUS_TOOLS: FocusTool[] = [
     emoji: '🍅',
     title: 'Pomodoro',
     description: 'Focus, take a real break, then come back.',
-    available: false,
+    available: true,
   },
   {
     id: 'body-double',

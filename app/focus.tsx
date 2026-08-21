@@ -11,6 +11,7 @@ import {
 import { AppShell } from '@/components/design-system/AppShell';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
 import { FocusSprint } from '@/components/focus/FocusSprint';
+import { Pomodoro } from '@/components/focus/Pomodoro';
 import { FOCUS_TOOLS, FocusTool, FocusToolId, pickFocusTip } from '@/data/focusTools';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { radii, spacing, typography } from '@/lib/theme';
@@ -120,11 +121,19 @@ export default function FocusScreen() {
   const { width: viewportWidth } = useWindowDimensions();
   const [selectedTool, setSelectedTool] = useState<FocusToolId | null>(null);
   const [sprintMounted, setSprintMounted] = useState(false);
+  const [pomodoroMounted, setPomodoroMounted] = useState(false);
   const [tip] = useState(() => pickFocusTip());
 
-  const openSprint = () => {
-    setSprintMounted(true);
-    setSelectedTool('sprint');
+  const openTool = (id: FocusToolId) => {
+    if (id === 'sprint') {
+      setSprintMounted(true);
+      setSelectedTool('sprint');
+      return;
+    }
+    if (id === 'pomodoro') {
+      setPomodoroMounted(true);
+      setSelectedTool('pomodoro');
+    }
   };
 
   const isWide = viewportWidth >= WIDE_BREAKPOINT;
@@ -134,11 +143,13 @@ export default function FocusScreen() {
   const gap = isWide ? GRID_GAP_DESKTOP : GRID_GAP_MOBILE;
 
   const showingSprint = selectedTool === 'sprint';
+  const showingPomodoro = selectedTool === 'pomodoro';
+  const showingHub = !showingSprint && !showingPomodoro;
 
   return (
-    <AppShell title={showingSprint ? 'Focus Sprint' : 'Focus'}>
+    <AppShell title={showingSprint ? 'Focus Sprint' : showingPomodoro ? 'Pomodoro' : 'Focus'}>
       <ScreenContainer>
-        <View style={showingSprint ? styles.hidden : styles.visible}>
+        <View style={showingHub ? styles.visible : styles.hidden}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <View style={styles.hubShell}>
               <View style={styles.hubInner}>
@@ -153,7 +164,7 @@ export default function FocusScreen() {
                     <FocusToolCard
                       key={tool.id}
                       tool={tool}
-                      onPress={tool.available ? openSprint : undefined}
+                      onPress={tool.available ? () => openTool(tool.id) : undefined}
                     />
                   ))}
                 </FocusToolsGrid>
@@ -174,6 +185,12 @@ export default function FocusScreen() {
         {sprintMounted ? (
           <View style={showingSprint ? styles.visible : styles.hidden}>
             <FocusSprint onBack={() => setSelectedTool(null)} />
+          </View>
+        ) : null}
+
+        {pomodoroMounted ? (
+          <View style={showingPomodoro ? styles.visible : styles.hidden}>
+            <Pomodoro onBack={() => setSelectedTool(null)} />
           </View>
         ) : null}
       </ScreenContainer>

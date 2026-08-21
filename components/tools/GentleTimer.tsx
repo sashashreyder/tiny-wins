@@ -20,6 +20,9 @@ export type GentleTimerProps = {
   header?: ReactNode;
   actionLayout?: GentleTimerActionLayout;
   cardStyle?: ViewStyle;
+  showPause?: boolean;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   onFinish: (reason: GentleTimerFinishReason) => void;
   onEndRequest?: () => void;
   children?: ReactNode;
@@ -36,6 +39,9 @@ export function GentleTimer({
   header,
   actionLayout = 'stretch',
   cardStyle,
+  showPause = true,
+  secondaryLabel,
+  onSecondary,
   onFinish,
   onEndRequest,
   children,
@@ -101,13 +107,15 @@ export function GentleTimer({
           actionLayout === 'centered' ? styles.actionRowCentered : null,
           actionLayout === 'stack' ? styles.actionRowStack : null,
         ]}>
-        <GradientButton
-          label={paused ? resumeLabel : pauseLabel}
-          onPress={() => (paused ? resume() : pause())}
-          variant="ghost"
-          small={compactControls}
-          style={actionLayout === 'stack' ? styles.actionButtonStack : styles.actionButton}
-        />
+        {showPause ? (
+          <GradientButton
+            label={paused ? resumeLabel : pauseLabel}
+            onPress={() => (paused ? resume() : pause())}
+            variant="ghost"
+            small={compactControls}
+            style={actionLayout === 'stack' ? styles.actionButtonStack : styles.actionButton}
+          />
+        ) : null}
         <GradientButton
           label={endLabel}
           onPress={() => {
@@ -121,6 +129,18 @@ export function GentleTimer({
           small={compactControls}
           style={actionLayout === 'stack' ? styles.actionButtonStack : styles.actionButton}
         />
+        {secondaryLabel && onSecondary ? (
+          <GradientButton
+            label={secondaryLabel}
+            onPress={() => {
+              pause();
+              onSecondary();
+            }}
+            variant="ghost"
+            small={compactControls}
+            style={actionLayout === 'stack' ? styles.actionButtonStack : styles.actionButton}
+          />
+        ) : null}
       </View>
 
       {children}
