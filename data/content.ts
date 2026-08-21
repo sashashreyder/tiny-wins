@@ -96,9 +96,9 @@ export const stuckTypes: StuckTypeOption[] = [
   },
   {
     id: 'forgot-what',
-    label: 'I forgot what I was doing',
+    label: 'I lost the thread',
     emoji: '💭',
-    hint: 'The thread disappeared mid-task.',
+    hint: "I got distracted and don't know where I left off.",
   },
 ];
 

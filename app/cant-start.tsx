@@ -8857,13 +8857,13 @@ export default function CantStartScreen() {
               <View style={[styles.stageInner, styles.threadInner]}>
                 <InternalBack label="Back to stuck types" onPress={returnToStuckTypes} />
                 <Text style={[styles.eyebrow, { color: theme.textMuted }]}>I LOST THE THREAD</Text>
-                <Text style={[styles.stageTitle, { color: theme.text }]}>Let’s find where you were.</Text>
+                <Text style={[styles.stageTitle, { color: theme.text }]}>Let’s find your way back in.</Text>
                 <Text
                   style={[
                     styles.stageSupport,
                     { color: theme.textSecondary, marginBottom: spacing.md },
                   ]}>
-                  You do not need to remember the whole task. We only need enough context to reconnect.
+                  You don’t need to reconstruct the whole task. We only need the last useful clue.
                 </Text>
 
                 <GlassCard
@@ -8876,7 +8876,7 @@ export default function CantStartScreen() {
                     },
                   ]}>
                   <Text style={[styles.vzStatementText, { color: theme.onLightAccent }]}>
-                    Find the last visible clue, not the entire plan.
+                    Find the last useful clue, not the entire plan.
                   </Text>
                 </GlassCard>
 
