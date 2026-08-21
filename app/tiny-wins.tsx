@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppShell } from '@/components/design-system/AppShell';
 import { GradientButton } from '@/components/design-system/Buttons';
@@ -8,6 +8,8 @@ import { TagPill } from '@/components/design-system/Tags';
 import { SupportiveMessage } from '@/components/design-system/Feedback';
 import { tinyWinTemplates } from '@/data/content';
 import { useAppTheme } from '@/hooks/useAppTheme';
+import { activitySourceLabels, buildActivityTimeline } from '@/lib/activityTimeline';
+import { formatTimeForDisplay, todayLocalDateKey } from '@/lib/dateUtils';
 import { spacing, typography } from '@/lib/theme';
 import { useAppStore } from '@/store/useAppStore';
 import { TinyWinCategory } from '@/types';
@@ -17,11 +19,40 @@ const categories = Object.keys(tinyWinTemplates) as TinyWinCategory[];
 export default function TinyWinsScreen() {
   const theme = useAppTheme();
   const addTinyWin = useAppStore((s) => s.addTinyWin);
+  const setHardDay = useAppStore((s) => s.setHardDay);
+  const todayKey = todayLocalDateKey();
+  const hardToday = useAppStore((s) => s.dayMetadata?.[todayKey]?.isHardDay ?? false);
   const tinyWins = useAppStore((s) => s.tinyWins);
+  const waterEntries = useAppStore((s) => s.waterEntries);
+  const sleepEntries = useAppStore((s) => s.sleepEntries);
+  const moodEntries = useAppStore((s) => s.moodEntries);
+  const focusSessions = useAppStore((s) => s.focusSessions);
+  const selfCareChecks = useAppStore((s) => s.selfCareChecks);
+  const homeCareTasks = useAppStore((s) => s.homeCareTasks);
+  const activityTimeline = useMemo(
+    () =>
+      buildActivityTimeline({
+        tinyWins,
+        waterEntries,
+        sleepEntries,
+        moodEntries,
+        focusSessions,
+        selfCareChecks,
+        homeCareTasks,
+      }),
+    [
+      tinyWins,
+      waterEntries,
+      sleepEntries,
+      moodEntries,
+      focusSessions,
+      selfCareChecks,
+      homeCareTasks,
+    ],
+  );
 
   const [category, setCategory] = useState<TinyWinCategory>('self-care');
   const [custom, setCustom] = useState('');
-  const [hardToday, setHardToday] = useState(false);
   const [note, setNote] = useState('');
 
   const logWin = (title: string) => {
@@ -29,6 +60,8 @@ export default function TinyWinsScreen() {
     setNote('');
     setCustom('');
   };
+
+  const recent = activityTimeline.slice(0, 10);
 
   return (
     <AppShell title="Tiny Wins">
@@ -52,10 +85,13 @@ export default function TinyWinsScreen() {
           </View>
 
           <TagPill
-            label={hardToday ? 'Hard today ✓ (+bonus XP)' : 'Mark as hard today'}
+            label={hardToday ? 'Hard day marked ✓' : 'Mark today as a hard day'}
             selected={hardToday}
-            onPress={() => setHardToday(!hardToday)}
+            onPress={() => setHardDay(todayKey, !hardToday)}
           />
+          <Text style={[styles.hardDayHint, { color: theme.textMuted }]}>
+            Small things can count more on hard days.
+          </Text>
 
           <SectionHeader title="Quick log" subtitle="Tap to log instantly" />
           <View style={styles.pillGrid}>
@@ -87,13 +123,29 @@ export default function TinyWinsScreen() {
             />
           </GlassCard>
 
-          <SectionHeader title="Recent wins" subtitle={`${tinyWins.length} total · no streak shame`} />
-          {tinyWins.slice(0, 10).map((win) => (
-            <GlassCard key={win.id} style={styles.winRow}>
-              <Text style={{ color: theme.text, flex: 1, fontWeight: '600' }}>{win.title}</Text>
-              <Text style={{ color: theme.textMuted }}>+{win.xp} XP</Text>
-            </GlassCard>
-          ))}
+          <SectionHeader
+            title="Recent wins"
+            subtitle={`${activityTimeline.length} recorded wins`}
+          />
+          {recent.map((entry) => {
+            const time = formatTimeForDisplay(entry.createdAt);
+            const meta = [activitySourceLabels[entry.source], time].filter(Boolean).join(' · ');
+            const showXp = typeof entry.xp === 'number' && entry.xp > 0;
+
+            return (
+              <GlassCard key={entry.id} style={styles.winRow}>
+                <View style={styles.winText}>
+                  <Text style={{ color: theme.text, fontWeight: '600' }}>{entry.title}</Text>
+                  {meta ? (
+                    <Text style={{ color: theme.textMuted, ...typography.caption }}>{meta}</Text>
+                  ) : null}
+                </View>
+                {showXp ? (
+                  <Text style={{ color: theme.textMuted }}>+{entry.xp} XP</Text>
+                ) : null}
+              </GlassCard>
+            );
+          })}
 
           <SupportiveMessage message="Progress is not only finished projects." />
         </ScrollView>
@@ -107,6 +159,7 @@ const styles = StyleSheet.create({
   headline: { ...typography.h1 },
   sub: { ...typography.body, marginBottom: spacing.md },
   pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  hardDayHint: { ...typography.caption, marginBottom: spacing.sm },
   input: {
     borderWidth: 1,
     borderRadius: 12,
@@ -115,4 +168,5 @@ const styles = StyleSheet.create({
     ...typography.body,
   },
   winRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs },
+  winText: { flex: 1, marginRight: spacing.sm },
 });

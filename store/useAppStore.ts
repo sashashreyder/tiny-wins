@@ -43,6 +43,7 @@ interface AppActions {
   completeFocus: (session: Omit<FocusSession, 'id' | 'createdAt' | 'xp'>, result: FocusResult) => void;
   toggleSelfCare: (label: string) => void;
   toggleHomeTask: (zone: string, label: string) => void;
+  setHardDay: (dateKey: string, isHardDay: boolean) => void;
   claimReward: (rewardId: string) => void;
   unlockPrintable: (printableId: string) => void;
   addCustomReward: (reward: Omit<Reward, 'id' | 'unlocked' | 'claimed' | 'isCustom'>) => void;
@@ -262,6 +263,7 @@ export const useAppStore = create<AppStore>()(
             label,
             done: true,
             date: today,
+            createdAt: new Date().toISOString(),
           };
           get().addXP(
             s.userProfile?.lowEnergyMode
@@ -292,12 +294,25 @@ export const useAppStore = create<AppStore>()(
             label,
             done: true,
             date: today,
+            createdAt: new Date().toISOString(),
           };
           get().addXP(calculateXP('home-reset'));
           get().markAchievementEvent('home-reset');
           return { homeCareTasks: [...s.homeCareTasks, task] };
         });
       },
+
+      setHardDay: (dateKey, isHardDay) =>
+        set((s) => ({
+          dayMetadata: {
+            ...(s.dayMetadata ?? {}),
+            [dateKey]: {
+              ...(s.dayMetadata ?? {})[dateKey],
+              isHardDay,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        })),
 
       claimReward: (rewardId) =>
         set((s) => {
@@ -366,6 +381,13 @@ export const useAppStore = create<AppStore>()(
         }
         if (merged.latestComebackNote === undefined) {
           merged.latestComebackNote = null;
+        }
+        if (
+          merged.dayMetadata == null ||
+          typeof merged.dayMetadata !== 'object' ||
+          Array.isArray(merged.dayMetadata)
+        ) {
+          merged.dayMetadata = {};
         }
         return merged;
       },

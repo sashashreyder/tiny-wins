@@ -228,6 +228,8 @@ export interface SelfCareCheck {
   label: string;
   done: boolean;
   date: string;
+  /** Present on newly created records. Historical items may only have `date`. */
+  createdAt?: string;
 }
 
 export interface HomeCareTask {
@@ -236,6 +238,35 @@ export interface HomeCareTask {
   label: string;
   done: boolean;
   date: string;
+  /** Present on newly created records. Historical items may only have `date`. */
+  createdAt?: string;
+}
+
+export type ActivitySource =
+  | 'tiny-win'
+  | 'water'
+  | 'sleep'
+  | 'mood'
+  | 'focus'
+  | 'self-care'
+  | 'home-care';
+
+/** Derived progress row. Never persisted — build from existing source collections. */
+export interface ActivityEntry {
+  id: string;
+  source: ActivitySource;
+  title: string;
+  /** Local calendar day as YYYY-MM-DD. */
+  dateKey: string;
+  createdAt?: string;
+  xp?: number;
+  category?: string;
+  note?: string;
+}
+
+export interface DayMetadata {
+  isHardDay: boolean;
+  updatedAt: string;
 }
 
 export interface AppState {
@@ -257,6 +288,8 @@ export interface AppState {
   selfCareChecks: SelfCareCheck[];
   homeCareTasks: HomeCareTask[];
   claimedPrintables: string[];
+  /** Local YYYY-MM-DD keys. Missing on older persisted users — treat as {}. */
+  dayMetadata: Record<string, DayMetadata>;
 }
 
 export interface ToolDefinition {

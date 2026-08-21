@@ -107,6 +107,7 @@ export function createDemoState(): AppState {
     selfCareChecks: [],
     homeCareTasks: [],
     claimedPrintables: ['p1'],
+    dayMetadata: {},
   };
 }
 
@@ -130,5 +131,6 @@ export function createEmptyState(): AppState {
     selfCareChecks: [],
     homeCareTasks: [],
     claimedPrintables: [],
+    dayMetadata: {},
   };
 }
