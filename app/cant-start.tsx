@@ -10,7 +10,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { AppShell } from '@/components/design-system/AppShell';
 import { GradientButton } from '@/components/design-system/Buttons';
 import { GlassCard, SectionHeader } from '@/components/design-system/GlassCard';
@@ -2453,6 +2453,7 @@ function ChecklistRow({
 export default function CantStartScreen() {
   const theme = useAppTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{ task?: string }>();
   const { width: viewportWidth } = useWindowDimensions();
   const completeQuest = useAppStore((s) => s.completeCantStartQuest);
   const addTinyWin = useAppStore((s) => s.addTinyWin);
@@ -2470,6 +2471,12 @@ export default function CantStartScreen() {
   const [taskText, setTaskText] = useState('');
   const [confirmedContext, setConfirmedContext] = useState<TaskContext | null>(null);
   const [confirmedTaskText, setConfirmedTaskText] = useState('');
+
+  const incomingTask = typeof params.task === 'string' ? params.task.trim() : '';
+  useEffect(() => {
+    if (!incomingTask) return;
+    setTaskText((current) => (current.trim() ? current : incomingTask));
+  }, [incomingTask]);
 
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);

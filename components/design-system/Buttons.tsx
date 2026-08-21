@@ -31,7 +31,7 @@ export function GradientButton({
           pressed && styles.pressed,
           style,
         ]}>
-        <Text style={[styles.ghostText, { color: theme.text }, small && styles.smallText]}>
+        <Text style={[styles.ghostText, { color: theme.text }, small && styles.smallText]} numberOfLines={1}>
           {label}
         </Text>
       </Pressable>
@@ -46,13 +46,19 @@ export function GradientButton({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [pressed && styles.pressed, style]}>
+      style={({ pressed }) => [
+        { minHeight: small ? 40 : 52, justifyContent: 'center' },
+        pressed && styles.pressed,
+        style,
+      ]}>
       <LinearGradient
         colors={gradientColors}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.button, small && styles.small]}>
-        <Text style={[styles.text, small && styles.smallText]}>{label}</Text>
+        style={[styles.button, small && styles.small, styles.buttonFill]}>
+        <Text style={[styles.text, small && styles.smallText]} numberOfLines={1}>
+          {label}
+        </Text>
       </LinearGradient>
     </Pressable>
   );
@@ -94,6 +100,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 52,
     justifyContent: 'center',
+  },
+  buttonFill: {
+    width: '100%',
+    flex: 1,
   },
   small: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md, minHeight: 40 },
   text: { ...typography.body, color: colors.inkViolet, fontWeight: '700' },

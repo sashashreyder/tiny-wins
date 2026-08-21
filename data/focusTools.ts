@@ -1,9 +1,8 @@
 export type FocusToolId =
   | 'sprint'
   | 'pomodoro'
-  | 'one-thing'
-  | 'distraction-dump'
-  | 'reset'
+  | 'body-double'
+  | 'batch'
   | 'challenge';
 
 export type FocusTool = {
@@ -18,7 +17,7 @@ export const FOCUS_TOOLS: FocusTool[] = [
   {
     id: 'sprint',
     emoji: '⏱',
-    title: 'Focus sprint',
+    title: 'Focus Sprint',
     description: 'Stay with one task for a few minutes.',
     available: true,
   },
@@ -26,35 +25,28 @@ export const FOCUS_TOOLS: FocusTool[] = [
     id: 'pomodoro',
     emoji: '🍅',
     title: 'Pomodoro',
-    description: 'Focus for a while, then take a real break.',
+    description: 'Focus, take a real break, then come back.',
     available: false,
   },
   {
-    id: 'one-thing',
-    emoji: '🎯',
-    title: 'One thing only',
-    description: 'Put one task in front of you. Park everything else.',
+    id: 'body-double',
+    emoji: '👥',
+    title: 'Body Double',
+    description: 'Work alongside a quiet companion.',
     available: false,
   },
   {
-    id: 'distraction-dump',
-    emoji: '🧠',
-    title: 'Distraction dump',
-    description: 'Catch side thoughts without leaving your task.',
-    available: false,
-  },
-  {
-    id: 'reset',
-    emoji: '⚡',
-    title: 'Reset my focus',
-    description: 'Lost the thread? Reconnect to what you were doing.',
+    id: 'batch',
+    emoji: '📚',
+    title: 'Batch Mode',
+    description: 'Group similar little tasks and clear them together.',
     available: false,
   },
   {
     id: 'challenge',
     emoji: '🎲',
-    title: 'Make it a challenge',
-    description: 'Give a boring task a small target and beat the clock.',
+    title: 'Challenge Mode',
+    description: 'Turn a boring task into a tiny game.',
     available: false,
   },
 ];

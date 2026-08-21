@@ -320,11 +320,10 @@ export const focusModes = [
 ];
 
 export const focusResults = [
-  { id: 'started', label: 'I started' },
-  { id: 'progress', label: 'I made progress' },
+  { id: 'progress', label: 'I made enough progress for now' },
   { id: 'finished', label: 'I finished' },
   { id: 'stuck', label: 'I got stuck' },
-  { id: 'came-back', label: 'I got distracted but came back' },
+  { id: 'couldnt-start', label: "I couldn't get started" },
 ] as const;
 
 export const rewardTemplates: Omit<Reward, 'unlocked' | 'claimed'>[] = [

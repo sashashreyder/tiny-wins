@@ -91,6 +91,8 @@ function formatFocusResult(result?: FocusResult): string | undefined {
       return 'Got stuck';
     case 'came-back':
       return 'Came back';
+    case 'couldnt-start':
+      return "Couldn't get started";
     default:
       return undefined;
   }

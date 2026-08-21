@@ -91,7 +91,8 @@ export type FocusResult =
   | 'progress'
   | 'finished'
   | 'stuck'
-  | 'came-back';
+  | 'came-back'
+  | 'couldnt-start';
 
 export type BrainDumpMode =
   | 'brain-dump'
