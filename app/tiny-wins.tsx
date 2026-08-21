@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -38,6 +38,9 @@ import { ActivityEntry, TinyWinCategory } from '@/types';
 
 const CONTENT_MAX_WIDTH = 1040;
 const WIDE_BREAKPOINT = 900;
+const CUSTOM_FORM_MAX_WIDTH = 620;
+const TIMELINE_MAX_WIDTH = 800;
+const TIMELINE_PREVIEW_COUNT = 5;
 const categories = Object.keys(tinyWinTemplates) as TinyWinCategory[];
 
 type LogMode = 'quick' | 'custom';
@@ -94,6 +97,7 @@ export default function TinyWinsScreen() {
   const [category, setCategory] = useState<TinyWinCategory>('self-care');
   const [custom, setCustom] = useState('');
   const [note, setNote] = useState('');
+  const [showAllWins, setShowAllWins] = useState(false);
 
   const activityTimeline = useMemo(
     () =>
@@ -142,6 +146,10 @@ export default function TinyWinsScreen() {
   const selectedCount = activityCountByDate[selectedDateKey] ?? 0;
   const activitiesForSelectedDay = activitiesByDate[selectedDateKey] ?? [];
   const selectedIsHard = dayMetadata?.[selectedDateKey]?.isHardDay ?? false;
+  const visibleWins =
+    showAllWins || activitiesForSelectedDay.length <= TIMELINE_PREVIEW_COUNT
+      ? activitiesForSelectedDay
+      : activitiesForSelectedDay.slice(0, TIMELINE_PREVIEW_COUNT);
   const previousDateKey = shiftDateKey(selectedDateKey, -1);
   const nextDateKey = shiftDateKey(selectedDateKey, 1);
   const nextIsFuture = nextDateKey > todayKey;
@@ -151,6 +159,10 @@ export default function TinyWinsScreen() {
     nextVisibleMonth.monthIndex,
     todayKey,
   );
+
+  useEffect(() => {
+    setShowAllWins(false);
+  }, [selectedDateKey]);
 
   const selectDate = (dateKey: string) => {
     if (dateKey > todayKey) return;
@@ -196,7 +208,10 @@ export default function TinyWinsScreen() {
               </Text>
             </View>
 
-            <GlassCard style={styles.dateCard}>
+            <GlassCard
+              style={
+                calendarOpen ? [styles.dateCard, styles.dateCardWithCalendar] : styles.dateCard
+              }>
               <View style={isWide ? styles.dateTopWide : styles.dateTopStack}>
                 <Pressable
                   onPress={toggleCalendar}
@@ -282,30 +297,31 @@ export default function TinyWinsScreen() {
                   </Text>
                 </Pressable>
               </View>
-
-              {calendarOpen ? (
-                <View style={styles.calendarSlot}>
-                  <MonthCalendar
-                    year={visibleMonth.year}
-                    monthIndex={visibleMonth.monthIndex}
-                    selectedDateKey={selectedDateKey}
-                    todayKey={todayKey}
-                    activityCountByDate={activityCountByDate}
-                    hardDayByDate={hardDayByDate}
-                    onSelectDate={selectDate}
-                    onPrevMonth={() =>
-                      setVisibleMonth((month) => shiftMonth(month.year, month.monthIndex, -1))
-                    }
-                    onNextMonth={() => {
-                      const next = shiftMonth(visibleMonth.year, visibleMonth.monthIndex, 1);
-                      if (isMonthAfterDateKey(next.year, next.monthIndex, todayKey)) return;
-                      setVisibleMonth(next);
-                    }}
-                    canGoNextMonth={canGoNextMonth}
-                  />
-                </View>
-              ) : null}
             </GlassCard>
+
+            {calendarOpen ? (
+              <GlassCard
+                style={isWide ? [styles.calendarPanel, styles.calendarPanelWide] : styles.calendarPanel}>
+                <MonthCalendar
+                  year={visibleMonth.year}
+                  monthIndex={visibleMonth.monthIndex}
+                  selectedDateKey={selectedDateKey}
+                  todayKey={todayKey}
+                  activityCountByDate={activityCountByDate}
+                  hardDayByDate={hardDayByDate}
+                  onSelectDate={selectDate}
+                  onPrevMonth={() =>
+                    setVisibleMonth((month) => shiftMonth(month.year, month.monthIndex, -1))
+                  }
+                  onNextMonth={() => {
+                    const next = shiftMonth(visibleMonth.year, visibleMonth.monthIndex, 1);
+                    if (isMonthAfterDateKey(next.year, next.monthIndex, todayKey)) return;
+                    setVisibleMonth(next);
+                  }}
+                  canGoNextMonth={canGoNextMonth}
+                />
+              </GlassCard>
+            ) : null}
 
             {isToday ? (
               <View style={styles.section}>
@@ -358,7 +374,7 @@ export default function TinyWinsScreen() {
                     </View>
                   </View>
                 ) : (
-                  <View style={styles.modeBody}>
+                  <View style={[styles.modeBody, isWide && styles.customFormWide]}>
                     <Text style={[styles.helper, { color: theme.textMuted }]}>
                       Anything small that mattered counts.
                     </Text>
@@ -380,6 +396,7 @@ export default function TinyWinsScreen() {
                       label="Log tiny win"
                       onPress={() => custom.trim() && logWin(custom.trim())}
                       small
+                      style={styles.logButton}
                     />
                   </View>
                 )}
@@ -413,13 +430,25 @@ export default function TinyWinsScreen() {
                 </View>
               ) : (
                 <View style={styles.timeline}>
-                  {activitiesForSelectedDay.map((entry, index) => (
+                  {visibleWins.map((entry, index) => (
                     <DayTimelineRow
                       key={entry.id}
                       entry={entry}
-                      showDivider={index < activitiesForSelectedDay.length - 1}
+                      showDivider={index < visibleWins.length - 1}
                     />
                   ))}
+                  {activitiesForSelectedDay.length > TIMELINE_PREVIEW_COUNT ? (
+                    <Pressable
+                      onPress={() => setShowAllWins((open) => !open)}
+                      accessibilityRole="button"
+                      style={({ pressed }) => [styles.timelineToggle, pressed && styles.pressed]}>
+                      <Text style={[styles.timelineToggleLabel, { color: theme.accent }]}>
+                        {showAllWins
+                          ? 'Show less ↑'
+                          : `Show all ${activitiesForSelectedDay.length} wins ↓`}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               )}
             </View>
@@ -451,10 +480,7 @@ function HardDayPanel({
     <View style={[styles.hardDayPanel, wide && styles.hardDayPanelWide]}>
       <Text style={[styles.hardDayTitle, { color: theme.text }]}>Hard day?</Text>
       <Text style={[styles.hardDayHint, { color: theme.textMuted }]}>
-        Mark this when ordinary things took more effort than usual.
-      </Text>
-      <Text style={[styles.hardDayHint, { color: theme.textMuted }]}>
-        Tiny wins can count for more on days like this.
+        When basic things took more effort than usual.
       </Text>
       <Pressable
         onPress={onToggle}
@@ -493,7 +519,7 @@ function HardDayPanel({
         accessibilityState={{ expanded: whyOpen }}
         hitSlop={6}
         style={({ pressed }) => [pressed && styles.pressed]}>
-        <Text style={[styles.whyLink, { color: theme.accent }]}>Why mark a hard day?</Text>
+        <Text style={[styles.whyLink, { color: theme.accent }]}>Why? →</Text>
       </Pressable>
       {whyOpen ? (
         <Text style={[styles.whyBody, { color: theme.textSecondary }]}>
@@ -648,12 +674,13 @@ const styles = StyleSheet.create({
   headline: { ...typography.h1 },
   sub: { ...typography.body, marginTop: spacing.xs },
   dateCard: { marginBottom: spacing.xl },
+  dateCardWithCalendar: { marginBottom: spacing.sm },
   dateTopWide: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.lg,
   },
-  dateTopStack: { gap: spacing.md },
+  dateTopStack: { gap: spacing.sm },
   dateSummary: {
     flex: 1,
     minWidth: 0,
@@ -666,15 +693,15 @@ const styles = StyleSheet.create({
   },
   dateTitle: { ...typography.h3 },
   todayStatus: { ...typography.bodySmall, fontWeight: '600' },
-  countSummary: { ...typography.bodySmall, marginTop: 4 },
+  countSummary: { ...typography.bodySmall, marginTop: 2 },
   calendarAction: {
     ...typography.caption,
     fontWeight: '700',
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
-  hardDayPanel: { gap: 6 },
+  hardDayPanel: { gap: 4 },
   hardDayPanelWide: {
-    width: 260,
+    width: 236,
     flexShrink: 0,
   },
   hardDayTitle: { ...typography.bodySmall, fontWeight: '700' },
@@ -708,8 +735,8 @@ const styles = StyleSheet.create({
   dayNav: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.md,
-    minHeight: 44,
+    marginTop: spacing.sm,
+    minHeight: 40,
   },
   dayNavSide: {
     flex: 1,
@@ -727,7 +754,16 @@ const styles = StyleSheet.create({
   },
   dayNavLabel: { ...typography.caption, fontWeight: '600' },
   navDisabled: { opacity: 0.45 },
-  calendarSlot: { marginTop: spacing.md },
+  calendarPanel: {
+    width: '100%',
+    marginBottom: spacing.xl,
+    alignSelf: 'stretch',
+  },
+  calendarPanelWide: {
+    width: 400,
+    maxWidth: 400,
+    alignSelf: 'flex-start',
+  },
   section: { marginBottom: spacing.xl },
   tabs: {
     flexDirection: 'row',
@@ -747,6 +783,11 @@ const styles = StyleSheet.create({
   },
   modeTabLabel: { ...typography.caption, fontWeight: '700' },
   modeBody: { gap: spacing.xs },
+  customFormWide: {
+    width: '100%',
+    maxWidth: CUSTOM_FORM_MAX_WIDTH,
+    alignSelf: 'flex-start',
+  },
   fieldLabel: { ...typography.bodySmall, fontWeight: '700', marginTop: spacing.sm },
   helper: { ...typography.caption, marginBottom: 2 },
   pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
@@ -775,6 +816,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     ...typography.body,
   },
+  logButton: {
+    alignSelf: 'flex-start',
+    minWidth: 168,
+    maxWidth: 220,
+  },
   backToToday: {
     alignSelf: 'flex-start',
     paddingVertical: 10,
@@ -786,12 +832,17 @@ const styles = StyleSheet.create({
   emptyDay: { paddingVertical: spacing.sm },
   emptyTitle: { ...typography.body, fontWeight: '600' },
   emptySub: { ...typography.bodySmall, marginTop: 4 },
-  timeline: { marginTop: spacing.xs },
+  timeline: {
+    marginTop: spacing.xs,
+    width: '100%',
+    maxWidth: TIMELINE_MAX_WIDTH,
+    alignSelf: 'flex-start',
+  },
   timelineRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   timelineDot: {
     width: 8,
@@ -799,10 +850,17 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginTop: 6,
   },
-  winText: { flex: 1, minWidth: 0, gap: 2 },
+  winText: { flex: 1, minWidth: 0, gap: 1 },
   timelineTime: { ...typography.caption },
   timelineTitle: { ...typography.body, fontWeight: '700' },
   timelineMeta: { ...typography.caption },
   timelineDivider: { height: StyleSheet.hairlineWidth, marginLeft: 20 },
+  timelineToggle: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.sm,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  timelineToggleLabel: { ...typography.caption, fontWeight: '700' },
   pressed: { opacity: 0.88 },
 });

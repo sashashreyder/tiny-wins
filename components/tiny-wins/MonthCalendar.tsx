@@ -199,8 +199,8 @@ function dayAccessibilityLabel({
 const styles = StyleSheet.create({
   wrap: {
     width: '100%',
-    maxWidth: 420,
-    alignSelf: 'flex-start',
+    maxWidth: 400,
+    alignSelf: 'stretch',
   },
   monthNav: {
     flexDirection: 'row',
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   },
   weekRow: {
     flexDirection: 'row',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   weekday: {
     flex: 1,
