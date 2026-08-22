@@ -45,8 +45,8 @@ export const FOCUS_TOOLS: FocusTool[] = [
   {
     id: 'challenge',
     emoji: '🎲',
-    title: 'Challenge Mode',
-    description: 'Turn a boring task into a tiny game.',
+    title: 'Speed Run',
+    description: 'See how much you can get done before the timer ends.',
     available: true,
   },
 ];

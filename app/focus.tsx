@@ -168,7 +168,7 @@ export default function FocusScreen() {
       : showingBatch
         ? 'Batch Mode'
         : showingChallenge
-          ? 'Challenge Mode'
+          ? 'Speed Run'
           : 'Focus';
 
   return (

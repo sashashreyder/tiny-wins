@@ -17,28 +17,19 @@ import {
   CHALLENGE_DURATION_MAX,
   CHALLENGE_DURATION_MIN,
   CHALLENGE_DURATION_OPTIONS,
-  CHALLENGE_PRESETS,
-  CHALLENGE_TARGET_DEFAULT,
-  CHALLENGE_TARGET_MAX,
-  CHALLENGE_TARGET_MIN,
   CHALLENGE_TASK_EXAMPLES,
   CHALLENGE_UNIT_EXAMPLES,
-  challengePreview,
-  challengeSupportLine,
-  challengeTimerHeadline,
-  challengeTimerSupport,
-  clampChallengeCount,
+  countLabel,
   incrementNote,
-  matchingPreset,
   minutesLabel,
-  parseChallengeCount,
   parseChallengeMinutes,
-  suggestSmallerChallenge,
-  unitScoreLabel,
+  scoreWithLabel,
+  speedRunSupportLine,
+  suggestShorterDuration,
 } from '@/data/challenge';
 import { formatCountdown, useCountdownTimer } from '@/hooks/useCountdownTimer';
 import { useAppTheme } from '@/hooks/useAppTheme';
-import { radii, spacing, typography } from '@/lib/theme';
+import { spacing, typography } from '@/lib/theme';
 import { useAppStore } from '@/store/useAppStore';
 import { FocusResult } from '@/types';
 
@@ -117,18 +108,13 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
   const [phase, setPhase] = useState<ChallengePhase>('setup');
   const [task, setTask] = useState('');
   const [unit, setUnit] = useState('');
-  const [targetText, setTargetText] = useState(String(CHALLENGE_TARGET_DEFAULT));
-  const [target, setTarget] = useState(CHALLENGE_TARGET_DEFAULT);
   const [durationMinutes, setDurationMinutes] = useState(CHALLENGE_DURATION_DEFAULT);
   const [durationCustom, setDurationCustom] = useState(false);
   const [customMinutesText, setCustomMinutesText] = useState('');
   const [completed, setCompleted] = useState(0);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
-  const [keepGoing, setKeepGoing] = useState(false);
-  const [endedByTimer, setEndedByTimer] = useState(false);
   const [remainingSnapshot, setRemainingSnapshot] = useState(0);
-  const [targetError, setTargetError] = useState<string | null>(null);
   const [durationError, setDurationError] = useState<string | null>(null);
   const [sparkle, setSparkle] = useState(false);
   const [pulseNote, setPulseNote] = useState<string | null>(null);
@@ -140,16 +126,12 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
   const countScale = useRef(new Animated.Value(1)).current;
 
   const taskLabel = task.trim();
-  const unitLabel = unit.trim();
-  const reachedTarget = completed >= target && target > 0;
-  const showTargetHit = phase === 'running' && reachedTarget && !keepGoing;
-  const selectedPreset = durationCustom ? null : matchingPreset(target, durationMinutes);
-  const previewTarget = parseChallengeCount(targetText) ?? target;
+  const unitLabel = countLabel(unit);
   const previewMinutes = durationCustom
     ? (parseChallengeMinutes(customMinutesText) ?? durationMinutes)
     : durationMinutes;
-  const preview = challengePreview(previewTarget, unitLabel, previewMinutes);
-  const scoreUnit = unitScoreLabel(unitLabel, completed);
+  const scoreLine = scoreWithLabel(completed, unit);
+  const supportLine = speedRunSupportLine(completed, unit, durationMinutes);
 
   useEffect(() => {
     return () => {
@@ -158,17 +140,12 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (completed < target) setKeepGoing(false);
-  }, [completed, target]);
-
   const handleTick = useCallback((secondsLeft: number) => {
     remainingRef.current = secondsLeft;
   }, []);
 
   const handleTimerComplete = useCallback(() => {
     setPaused(false);
-    setEndedByTimer(true);
     setPhase('summary');
   }, []);
 
@@ -188,7 +165,6 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
   };
 
   const sessionResult = (): FocusResult => {
-    if (completed >= target && target > 0) return 'finished';
     if (completed > 0) return 'progress';
     return 'started';
   };
@@ -198,18 +174,13 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
     setCompleted(0);
     setStartedAt(null);
     setPaused(false);
-    setKeepGoing(false);
-    setEndedByTimer(false);
     setRemainingSnapshot(0);
     setSparkle(false);
     setPulseNote(null);
-    setTargetError(null);
     setDurationError(null);
     if (options?.clearTask) {
       setTask('');
       setUnit('');
-      setTarget(CHALLENGE_TARGET_DEFAULT);
-      setTargetText(String(CHALLENGE_TARGET_DEFAULT));
       setDurationMinutes(CHALLENGE_DURATION_DEFAULT);
       setDurationCustom(false);
       setCustomMinutesText('');
@@ -231,7 +202,7 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
     if (savedRef.current) return;
     completeFocus(
       {
-        title: taskLabel || 'Challenge',
+        title: taskLabel || 'Speed Run',
         duration: elapsedFocusMinutes(startedAt),
         result,
       },
@@ -240,13 +211,7 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
     savedRef.current = true;
   };
 
-  const resolveSetup = (): { nextTarget: number; nextMinutes: number } | null => {
-    const parsedTarget = parseChallengeCount(targetText);
-    if (parsedTarget == null) {
-      setTargetError(`Choose a number from ${CHALLENGE_TARGET_MIN} to ${CHALLENGE_TARGET_MAX}.`);
-      return null;
-    }
-
+  const resolveSetup = (): number | null => {
     if (durationCustom) {
       const parsedMinutes = parseChallengeMinutes(customMinutesText);
       if (parsedMinutes == null) {
@@ -254,26 +219,19 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
         return null;
       }
       setDurationMinutes(parsedMinutes);
-      setTargetError(null);
       setDurationError(null);
-      setTarget(parsedTarget);
-      return { nextTarget: parsedTarget, nextMinutes: parsedMinutes };
+      return parsedMinutes;
     }
 
-    setTargetError(null);
     setDurationError(null);
-    setTarget(parsedTarget);
-    return { nextTarget: parsedTarget, nextMinutes: durationMinutes };
+    return durationMinutes;
   };
 
-  const beginChallenge = (nextTarget: number, nextMinutes: number) => {
+  const beginChallenge = (nextMinutes: number) => {
     savedRef.current = false;
-    setTarget(nextTarget);
     setDurationMinutes(nextMinutes);
     setCompleted(0);
     setPaused(false);
-    setKeepGoing(false);
-    setEndedByTimer(false);
     remainingRef.current = nextMinutes * 60;
     setRemainingSnapshot(nextMinutes * 60);
     setStartedAt(new Date().toISOString());
@@ -281,9 +239,9 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
   };
 
   const startChallenge = () => {
-    const resolved = resolveSetup();
-    if (!resolved) return;
-    beginChallenge(resolved.nextTarget, resolved.nextMinutes);
+    const nextMinutes = resolveSetup();
+    if (nextMinutes == null) return;
+    beginChallenge(nextMinutes);
   };
 
   const addOneDone = () => {
@@ -309,7 +267,6 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
 
   const finishToSummary = () => {
     setPaused(true);
-    setEndedByTimer(false);
     setPhase('summary');
   };
 
@@ -321,19 +278,17 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
     }
     if (actionId === 'again') {
       savedRef.current = false;
-      beginChallenge(target, durationMinutes);
+      beginChallenge(durationMinutes);
       return;
     }
-    if (actionId === 'smaller') {
-      const smaller = suggestSmallerChallenge(target, durationMinutes);
-      setTarget(smaller.target);
-      setTargetText(String(smaller.target));
-      setDurationMinutes(smaller.minutes);
+    if (actionId === 'easier') {
+      const shorter = suggestShorterDuration(durationMinutes);
+      setDurationMinutes(shorter);
       const isPreset = CHALLENGE_DURATION_OPTIONS.includes(
-        smaller.minutes as (typeof CHALLENGE_DURATION_OPTIONS)[number],
+        shorter as (typeof CHALLENGE_DURATION_OPTIONS)[number],
       );
       setDurationCustom(!isPreset);
-      setCustomMinutesText(isPreset ? '' : String(smaller.minutes));
+      setCustomMinutesText(isPreset ? '' : String(shorter));
       goToSetup();
       return;
     }
@@ -348,22 +303,8 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
     onBack();
   };
 
-  const applyPreset = (presetTarget: number, presetMinutes: number) => {
-    setTarget(presetTarget);
-    setTargetText(String(presetTarget));
-    setDurationMinutes(presetMinutes);
-    setDurationCustom(false);
-    setCustomMinutesText('');
-    setTargetError(null);
-    setDurationError(null);
-  };
-
   const clockMounted = Boolean(startedAt) && (phase === 'running' || phase === 'early');
-  const supportLine = challengeSupportLine(completed, target, endedByTimer);
-  const timerHeadline = challengeTimerHeadline(completed, target);
-  const timerSupport = challengeTimerSupport(completed, target);
   const showZeroActions = completed === 0;
-  const showSmaller = completed < target;
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -382,10 +323,12 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
 
           {phase === 'setup' ? (
             <>
-              <Text style={[styles.headline, { color: theme.text }]}>Challenge Mode</Text>
-              <Text style={[styles.lede, { color: theme.text }]}>Make it a tiny game.</Text>
+              <Text style={[styles.eyebrow, { color: theme.textMuted }]}>SPEED RUN</Text>
+              <Text style={[styles.lede, { color: theme.text }]}>
+                Make a boring task into a tiny race against the clock.
+              </Text>
               <Text style={[styles.sub, { color: theme.textSecondary }]}>
-                Give yourself a small target and see what you can do before the timer ends.
+                Pick something repeatable and see how much you can get done before time runs out.
               </Text>
 
               <GlassCard>
@@ -405,70 +348,19 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                 </Text>
 
                 <Text style={[styles.label, { color: theme.textSecondary }]}>
-                  What counts as one point?
+                  What are we counting?
                 </Text>
                 <TextInput
                   value={unit}
                   onChangeText={setUnit}
                   placeholder={CHALLENGE_UNIT_EXAMPLES[0]}
                   placeholderTextColor={theme.textMuted}
-                  accessibilityLabel="What counts as one point?"
+                  accessibilityLabel="What are we counting?"
                   style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder }]}
                 />
                 <Text style={[styles.hint, { color: theme.textMuted }]}>
                   {CHALLENGE_UNIT_EXAMPLES.slice(1).join(' · ')}
                 </Text>
-
-                <Text style={[styles.label, { color: theme.textSecondary }]}>Target</Text>
-                <View style={styles.stepperRow}>
-                  <Pressable
-                    onPress={() => {
-                      const current = parseChallengeCount(targetText) ?? target;
-                      const next = clampChallengeCount(current - 1);
-                      setTarget(next);
-                      setTargetText(String(next));
-                      setTargetError(null);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Decrease target"
-                    style={[styles.stepperBtn, { borderColor: theme.surfaceBorder }]}>
-                    <Text style={[styles.stepperGlyph, { color: theme.text }]}>−</Text>
-                  </Pressable>
-                  <TextInput
-                    value={targetText}
-                    onChangeText={(value) => {
-                      setTargetText(value.replace(/[^0-9]/g, '').slice(0, 2));
-                      setTargetError(null);
-                    }}
-                    keyboardType="number-pad"
-                    accessibilityLabel="Target"
-                    style={[
-                      styles.input,
-                      styles.countInput,
-                      { color: theme.text, borderColor: theme.surfaceBorder },
-                    ]}
-                  />
-                  <Pressable
-                    onPress={() => {
-                      const current = parseChallengeCount(targetText) ?? target;
-                      const next = clampChallengeCount(current + 1);
-                      setTarget(next);
-                      setTargetText(String(next));
-                      setTargetError(null);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Increase target"
-                    style={[styles.stepperBtn, { borderColor: theme.surfaceBorder }]}>
-                    <Text style={[styles.stepperGlyph, { color: theme.text }]}>+</Text>
-                  </Pressable>
-                </View>
-                {targetError ? (
-                  <Text style={[styles.errorText, { color: theme.accent }]}>{targetError}</Text>
-                ) : (
-                  <Text style={[styles.hint, { color: theme.textMuted }]}>
-                    {CHALLENGE_TARGET_MIN}–{CHALLENGE_TARGET_MAX}. Default is {CHALLENGE_TARGET_DEFAULT}.
-                  </Text>
-                )}
 
                 <Text style={[styles.label, { color: theme.textSecondary }]}>
                   How long do you want to play?
@@ -515,21 +407,9 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                   <Text style={[styles.errorText, { color: theme.accent }]}>{durationError}</Text>
                 ) : (
                   <Text style={[styles.hint, { color: theme.textMuted }]}>
-                    One short challenge. Default is {CHALLENGE_DURATION_DEFAULT} min.
+                    One short Speed Run. Default is {CHALLENGE_DURATION_DEFAULT} min.
                   </Text>
                 )}
-
-                <Text style={[styles.label, { color: theme.textSecondary }]}>Quick presets</Text>
-                <View style={styles.pillRow}>
-                  {CHALLENGE_PRESETS.map((preset) => (
-                    <TagPill
-                      key={preset.id}
-                      label={`${preset.label}: ${preset.target} · ${preset.minutes} min`}
-                      selected={selectedPreset === preset.id}
-                      onPress={() => applyPreset(preset.target, preset.minutes)}
-                    />
-                  ))}
-                </View>
               </GlassCard>
 
               <View
@@ -537,13 +417,26 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                   styles.preview,
                   { borderColor: theme.surfaceBorder, backgroundColor: theme.surface },
                 ]}>
-                <Text style={[styles.previewLabel, { color: theme.textMuted }]}>Your challenge:</Text>
-                <Text style={[styles.previewText, { color: theme.text }]}>{preview}</Text>
+                <Text style={[styles.previewLabel, { color: theme.textMuted }]}>Your Speed Run</Text>
+                <Text style={[styles.previewText, { color: theme.text }]}>
+                  {taskLabel || 'This Speed Run'}
+                </Text>
+                <Text style={[styles.previewMeta, { color: theme.textSecondary }]}>
+                  {minutesLabel(previewMinutes)}
+                </Text>
+                {unitLabel ? (
+                  <>
+                    <Text style={[styles.previewLabel, styles.previewLabelSpaced, { color: theme.textMuted }]}>
+                      Counting:
+                    </Text>
+                    <Text style={[styles.previewText, { color: theme.text }]}>{unitLabel}</Text>
+                  </>
+                ) : null}
               </View>
 
               <View style={[styles.startWrap, isNarrow && styles.startWrapMobile]}>
                 <GradientButton
-                  label="Start challenge"
+                  label="Start Speed Run"
                   onPress={startChallenge}
                   style={styles.startButton}
                 />
@@ -558,7 +451,14 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                 pointerEvents={phase === 'early' ? 'none' : 'auto'}
                 accessibilityElementsHidden={phase === 'early'}
                 importantForAccessibility={phase === 'early' ? 'no-hide-descendants' : 'auto'}>
-                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>CHALLENGE MODE</Text>
+                <Text style={[styles.eyebrow, { color: theme.textMuted }]}>SPEED RUN</Text>
+                {taskLabel ? (
+                  <Text
+                    style={[styles.taskLine, { color: theme.textSecondary }]}
+                    numberOfLines={2}>
+                    {taskLabel}
+                  </Text>
+                ) : null}
                 <View style={styles.metrics}>
                   <ChallengeClock
                     key={startedAt}
@@ -578,59 +478,32 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                         <Text
                           style={[styles.score, { color: theme.text }]}
                           accessibilityRole="text"
-                          accessibilityLabel={`${completed} of ${target} done`}>
-                          {completed} / {target}
+                          accessibilityLabel={scoreLine}>
+                          {completed}
                           {sparkle ? ' ✨' : ''}
                         </Text>
                       </Animated.View>
-                      {scoreUnit ? (
+                      {unitLabel ? (
                         <Text style={[styles.unitLine, { color: theme.textSecondary }]}>
-                          {scoreUnit}
+                          {unitLabel}
                         </Text>
-                      ) : taskLabel ? (
-                        <Text
-                          style={[styles.unitLine, { color: theme.textSecondary }]}
-                          numberOfLines={2}>
-                          {taskLabel}
-                        </Text>
-                      ) : null}
+                      ) : (
+                        <Text style={[styles.unitLine, { color: theme.textSecondary }]}>done</Text>
+                      )}
                       {pulseNote ? (
                         <Text style={[styles.pulseNote, { color: theme.accent }]}>{pulseNote}</Text>
                       ) : (
                         <View style={styles.pulseNoteSpacer} />
                       )}
 
-                      {showTargetHit ? (
-                        <View style={styles.targetHit}>
-                          <Text style={[styles.targetHitTitle, { color: theme.text }]}>
-                            Target hit ✨
-                          </Text>
-                          <View style={[styles.actionStack, compactLayout && styles.actionStackWide]}>
-                            <GradientButton
-                              label="Finish challenge"
-                              onPress={finishToSummary}
-                              small
-                              style={styles.actionButton}
-                            />
-                            <GradientButton
-                              label="Keep going"
-                              onPress={() => setKeepGoing(true)}
-                              variant="ghost"
-                              small
-                              style={styles.actionButton}
-                            />
-                          </View>
-                        </View>
-                      ) : (
-                        <View style={[styles.doneWrap, compactLayout && styles.doneWrapMobile]}>
-                          <GradientButton
-                            label="+ 1 done"
-                            onPress={addOneDone}
-                            accessibilityLabel="Add one done"
-                            style={styles.doneButton}
-                          />
-                        </View>
-                      )}
+                      <View style={[styles.doneWrap, compactLayout && styles.doneWrapMobile]}>
+                        <GradientButton
+                          label="+ 1 done"
+                          onPress={addOneDone}
+                          accessibilityLabel="Add one done"
+                          style={styles.doneButton}
+                        />
+                      </View>
                     </>
                   ) : null}
                 </View>
@@ -656,7 +529,7 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                     <Pressable
                       onPress={() => setPaused((value) => !value)}
                       accessibilityRole="button"
-                      accessibilityLabel={paused ? 'Resume challenge' : 'Pause challenge'}
+                      accessibilityLabel={paused ? 'Resume Speed Run' : 'Pause Speed Run'}
                       hitSlop={8}
                       style={styles.secondaryLink}>
                       <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>
@@ -666,11 +539,11 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                     <Pressable
                       onPress={requestEnd}
                       accessibilityRole="button"
-                      accessibilityLabel="End challenge"
+                      accessibilityLabel="End Speed Run"
                       hitSlop={8}
                       style={styles.secondaryLink}>
                       <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>
-                        End challenge
+                        End Speed Run
                       </Text>
                     </Pressable>
                   </View>
@@ -680,9 +553,7 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
               {phase === 'early' ? (
                 <View style={styles.panel}>
                   <Text style={[styles.headline, { color: theme.text }]}>Done for now?</Text>
-                  <Text style={[styles.summaryLine, { color: theme.text }]}>
-                    {completed} / {target}
-                  </Text>
+                  <Text style={[styles.summaryLine, { color: theme.text }]}>{scoreLine}</Text>
                   <Text style={[styles.sub, { color: theme.textSecondary }]}>
                     {formatCountdown(remainingSnapshot)} remaining
                   </Text>
@@ -709,32 +580,25 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
           {phase === 'summary' ? (
             <View style={styles.panel}>
               <Text style={[styles.headline, { color: theme.text }]}>
-                {completed === 0
-                  ? endedByTimer
-                    ? 'The timer ended. You still showed up.'
-                    : 'You still showed up.'
-                  : 'Challenge complete ✨'}
+                {completed === 0 ? 'Speed Run complete.' : 'Speed Run complete ✨'}
               </Text>
-              {endedByTimer && timerHeadline ? (
-                <Text style={[styles.outcomeLine, { color: theme.text }]}>{timerHeadline}</Text>
-              ) : null}
-              {endedByTimer && timerSupport ? (
-                <Text style={[styles.sub, { color: theme.textSecondary }]}>{timerSupport}</Text>
-              ) : null}
+              {completed > 0 ? (
+                <Text style={[styles.outcomeLine, { color: theme.text }]}>{scoreLine}</Text>
+              ) : (
+                <Text style={[styles.sub, { color: theme.textSecondary }]}>
+                  Nothing got counted this round.
+                </Text>
+              )}
 
               <Text style={[styles.metaLabel, { color: theme.textMuted }]}>Task</Text>
               <Text style={[styles.metaValue, { color: theme.text }]}>
-                {taskLabel || 'This challenge'}
-              </Text>
-              <Text style={[styles.metaLabel, { color: theme.textMuted }]}>Result</Text>
-              <Text style={[styles.metaValue, { color: theme.text }]}>
-                {completed} / {target}
+                {taskLabel || 'This Speed Run'}
               </Text>
               <Text style={[styles.metaLabel, { color: theme.textMuted }]}>Time</Text>
               <Text style={[styles.metaValue, { color: theme.text }]}>
                 {minutesLabel(durationMinutes)}
               </Text>
-              {completed > 0 && !endedByTimer ? (
+              {completed > 0 ? (
                 <Text style={[styles.supportLine, { color: theme.textSecondary }]}>{supportLine}</Text>
               ) : (
                 <View style={styles.supportSpacer} />
@@ -750,8 +614,8 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                       style={styles.actionButton}
                     />
                     <GradientButton
-                      label="Make the challenge smaller"
-                      onPress={() => handleSummaryAction('smaller')}
+                      label="Make it easier"
+                      onPress={() => handleSummaryAction('easier')}
                       variant="ghost"
                       small
                       style={styles.actionButton}
@@ -773,23 +637,12 @@ export function ChallengeMode({ onBack }: { onBack: () => void }) {
                       style={styles.actionButton}
                     />
                     <GradientButton
-                      label="Try another challenge"
+                      label="Try another Speed Run"
                       onPress={() => handleSummaryAction('another')}
                       variant="ghost"
                       small
                       style={styles.actionButton}
                     />
-                    {showSmaller ? (
-                      <Pressable
-                        onPress={() => handleSummaryAction('smaller')}
-                        accessibilityRole="button"
-                        accessibilityLabel="Make the challenge smaller"
-                        style={styles.secondaryLink}>
-                        <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>
-                          Make the challenge smaller
-                        </Text>
-                      </Pressable>
-                    ) : null}
                     <Pressable
                       onPress={() => handleSummaryAction('hub')}
                       accessibilityRole="link"
@@ -837,7 +690,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '700',
     letterSpacing: 1.2,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   headline: { ...typography.h1, marginBottom: spacing.xs },
   lede: { ...typography.h2, marginBottom: spacing.xs },
@@ -852,31 +705,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     ...typography.body,
   },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  stepperBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.full,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperGlyph: {
-    fontSize: 22,
-    fontWeight: '600',
-    lineHeight: 24,
-  },
-  countInput: {
-    width: 72,
-    marginBottom: 0,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
   pillRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -887,7 +715,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
+    borderRadius: 16,
     borderWidth: 1,
     gap: spacing.xs,
   },
@@ -896,9 +724,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.4,
   },
+  previewLabelSpaced: {
+    marginTop: spacing.sm,
+  },
   previewText: {
     ...typography.body,
     fontWeight: '600',
+  },
+  previewMeta: {
+    ...typography.body,
   },
   startWrap: {
     width: '100%',
@@ -923,6 +757,12 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
+  taskLine: {
+    ...typography.body,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
   timer: {
     fontSize: 64,
     lineHeight: 72,
@@ -936,8 +776,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   score: {
-    fontSize: 52,
-    lineHeight: 60,
+    fontSize: 64,
+    lineHeight: 72,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     textAlign: 'center',
@@ -960,16 +800,6 @@ const styles = StyleSheet.create({
     minHeight: 20,
     marginTop: spacing.xs,
   },
-  targetHit: {
-    width: '100%',
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  targetHitTitle: {
-    ...typography.h3,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
   doneWrap: {
     width: '100%',
     maxWidth: DONE_BUTTON_MAX_WIDTH,
@@ -988,9 +818,6 @@ const styles = StyleSheet.create({
     maxWidth: ACTION_MAX,
     alignSelf: 'center',
     gap: spacing.sm,
-  },
-  actionStackWide: {
-    maxWidth: '100%',
   },
   actionButton: {
     width: '100%',
@@ -1025,7 +852,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   outcomeLine: {
-    ...typography.h3,
+    ...typography.h2,
     marginBottom: spacing.xs,
   },
   metaLabel: {
