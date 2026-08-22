@@ -12,6 +12,8 @@ import { AppShell } from '@/components/design-system/AppShell';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
 import { FocusSprint } from '@/components/focus/FocusSprint';
 import { Pomodoro } from '@/components/focus/Pomodoro';
+import { BatchMode } from '@/components/focus/BatchMode';
+import { ChallengeMode } from '@/components/focus/ChallengeMode';
 import { FOCUS_TOOLS, FocusTool, FocusToolId, pickFocusTip } from '@/data/focusTools';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { radii, spacing, typography } from '@/lib/theme';
@@ -122,6 +124,8 @@ export default function FocusScreen() {
   const [selectedTool, setSelectedTool] = useState<FocusToolId | null>(null);
   const [sprintMounted, setSprintMounted] = useState(false);
   const [pomodoroMounted, setPomodoroMounted] = useState(false);
+  const [batchMounted, setBatchMounted] = useState(false);
+  const [challengeMounted, setChallengeMounted] = useState(false);
   const [tip] = useState(() => pickFocusTip());
 
   const openTool = (id: FocusToolId) => {
@@ -133,6 +137,16 @@ export default function FocusScreen() {
     if (id === 'pomodoro') {
       setPomodoroMounted(true);
       setSelectedTool('pomodoro');
+      return;
+    }
+    if (id === 'batch') {
+      setBatchMounted(true);
+      setSelectedTool('batch');
+      return;
+    }
+    if (id === 'challenge') {
+      setChallengeMounted(true);
+      setSelectedTool('challenge');
     }
   };
 
@@ -144,10 +158,21 @@ export default function FocusScreen() {
 
   const showingSprint = selectedTool === 'sprint';
   const showingPomodoro = selectedTool === 'pomodoro';
-  const showingHub = !showingSprint && !showingPomodoro;
+  const showingBatch = selectedTool === 'batch';
+  const showingChallenge = selectedTool === 'challenge';
+  const showingHub = !showingSprint && !showingPomodoro && !showingBatch && !showingChallenge;
+  const shellTitle = showingSprint
+    ? 'Focus Sprint'
+    : showingPomodoro
+      ? 'Pomodoro'
+      : showingBatch
+        ? 'Batch Mode'
+        : showingChallenge
+          ? 'Challenge Mode'
+          : 'Focus';
 
   return (
-    <AppShell title={showingSprint ? 'Focus Sprint' : showingPomodoro ? 'Pomodoro' : 'Focus'}>
+    <AppShell title={shellTitle}>
       <ScreenContainer>
         <View style={showingHub ? styles.visible : styles.hidden}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -191,6 +216,18 @@ export default function FocusScreen() {
         {pomodoroMounted ? (
           <View style={showingPomodoro ? styles.visible : styles.hidden}>
             <Pomodoro onBack={() => setSelectedTool(null)} />
+          </View>
+        ) : null}
+
+        {batchMounted ? (
+          <View style={showingBatch ? styles.visible : styles.hidden}>
+            <BatchMode onBack={() => setSelectedTool(null)} />
+          </View>
+        ) : null}
+
+        {challengeMounted ? (
+          <View style={showingChallenge ? styles.visible : styles.hidden}>
+            <ChallengeMode onBack={() => setSelectedTool(null)} />
           </View>
         ) : null}
       </ScreenContainer>

@@ -40,14 +40,14 @@ export const FOCUS_TOOLS: FocusTool[] = [
     emoji: '📚',
     title: 'Batch Mode',
     description: 'Group similar little tasks and clear them together.',
-    available: false,
+    available: true,
   },
   {
     id: 'challenge',
     emoji: '🎲',
     title: 'Challenge Mode',
     description: 'Turn a boring task into a tiny game.',
-    available: false,
+    available: true,
   },
 ];
 

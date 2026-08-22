@@ -9,6 +9,7 @@ interface GradientButtonProps {
   variant?: 'primary' | 'secondary' | 'ghost';
   style?: ViewStyle;
   small?: boolean;
+  accessibilityLabel?: string;
 }
 
 export function GradientButton({
@@ -17,6 +18,7 @@ export function GradientButton({
   variant = 'primary',
   style,
   small,
+  accessibilityLabel,
 }: GradientButtonProps) {
   const theme = useAppTheme();
 
@@ -24,6 +26,9 @@ export function GradientButton({
     return (
       <Pressable
         onPress={onPress}
+        {...(accessibilityLabel
+          ? { accessibilityRole: 'button' as const, accessibilityLabel }
+          : null)}
         style={({ pressed }) => [
           styles.ghost,
           { borderColor: theme.surfaceBorder },
@@ -46,6 +51,9 @@ export function GradientButton({
   return (
     <Pressable
       onPress={onPress}
+      {...(accessibilityLabel
+        ? { accessibilityRole: 'button' as const, accessibilityLabel }
+        : null)}
       style={({ pressed }) => [
         { minHeight: small ? 40 : 52, justifyContent: 'center' },
         pressed && styles.pressed,
