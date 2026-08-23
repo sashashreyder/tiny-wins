@@ -227,7 +227,7 @@ export default function FocusScreen() {
 
         {challengeMounted ? (
           <View style={showingChallenge ? styles.visible : styles.hidden}>
-            <ChallengeMode onBack={() => setSelectedTool(null)} />
+            <ChallengeMode key="speed-run" onBack={() => setSelectedTool(null)} />
           </View>
         ) : null}
       </ScreenContainer>
