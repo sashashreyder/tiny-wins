@@ -1,5 +1,6 @@
 import { moodOptions } from '@/data/content';
 import { startOfLocalDayMs, toLocalDateKey } from '@/lib/dateUtils';
+import { getMoodDateKey } from '@/lib/moodHistory';
 import {
   ActivityEntry,
   ActivitySource,
@@ -182,7 +183,7 @@ export function buildActivityTimeline(state: ActivityTimelineState): ActivityEnt
       id: `mood:${entry.id}`,
       source: 'mood',
       title: formatMoodTitle(entry.mood),
-      dateKey: toLocalDateKey(entry.createdAt),
+      dateKey: getMoodDateKey(entry),
       createdAt: entry.createdAt,
       category: moodLabel(entry.mood),
       note: entry.note,

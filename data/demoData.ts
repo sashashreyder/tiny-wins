@@ -1,4 +1,5 @@
 import { AppState, UserProfile } from '@/types';
+import { toLocalDateKey } from '@/lib/dateUtils';
 import {
   createInitialAchievements,
   createInitialRewards,
@@ -50,6 +51,48 @@ export function createDemoState(): AppState {
         tags: ['sleep', 'work', 'rejection'],
         note: 'Brain feels slow but I showed up.',
         createdAt: day(2),
+        dateKey: toLocalDateKey(day(2)),
+      },
+      {
+        id: 'm2',
+        mood: 'tired',
+        intensity: 4,
+        tags: ['sleep'],
+        createdAt: day(5),
+        dateKey: toLocalDateKey(day(5)),
+      },
+      {
+        id: 'm3',
+        mood: 'okay-ish',
+        intensity: 2,
+        tags: ['work'],
+        createdAt: day(8),
+        dateKey: toLocalDateKey(day(8)),
+      },
+      {
+        id: 'm4',
+        mood: 'foggy',
+        intensity: 4,
+        tags: ['sleep', 'work'],
+        note: "Couldn't concentrate after lunch.",
+        createdAt: day(26),
+        dateKey: toLocalDateKey(day(26)),
+      },
+      {
+        id: 'm5',
+        mood: 'anxious',
+        intensity: 3,
+        tags: ['work', 'too much waiting'],
+        createdAt: day(50),
+        dateKey: toLocalDateKey(day(50)),
+      },
+      {
+        id: 'm6',
+        mood: 'hopeful',
+        intensity: 2,
+        tags: [],
+        createdAt: day(74),
+        dateKey: toLocalDateKey(day(74)),
       },
     ],
     sleepEntries: [

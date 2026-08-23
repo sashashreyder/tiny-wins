@@ -127,6 +127,16 @@ export function isMonthAfterDateKey(
   return monthIndex > parsed.month - 1;
 }
 
+/** Locale month + day, e.g. August 20 */
+export function formatMonthDayLong(dateKey: string): string {
+  const date = dateFromDateKey(dateKey);
+  if (!date) return dateKey;
+  return date.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 /** Locale long form, e.g. Friday, August 21 */
 export function formatWeekdayLongDate(dateKey: string): string {
   const date = dateFromDateKey(dateKey);

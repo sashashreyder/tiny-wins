@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { createDemoState, createEmptyState } from '@/data/demoData';
+import { todayLocalDateKey } from '@/lib/dateUtils';
+import { hydrateMoodEntry } from '@/lib/moodHistory';
 import {
   calculateXP,
   checkAchievements,
@@ -33,7 +35,7 @@ interface AppActions {
   spendXP: (amount: number) => boolean;
   addTinyWin: (title: string, category: TinyWinCategory, isHardToday?: boolean, note?: string) => void;
   completeCantStartQuest: (quest: string, stuckType: StuckType) => void;
-  addMood: (entry: Omit<MoodEntry, 'id' | 'createdAt'>) => void;
+  addMood: (entry: Omit<MoodEntry, 'id' | 'createdAt' | 'dateKey'>) => void;
   addSleep: (entry: Omit<SleepEntry, 'id' | 'createdAt'>) => void;
   addWater: (amount?: number) => void;
   addBrainDump: (entry: Omit<BrainDumpEntry, 'id' | 'createdAt'>) => void;
@@ -163,10 +165,12 @@ export const useAppStore = create<AppStore>()(
       },
 
       addMood: (entry) => {
+        const createdAt = new Date().toISOString();
         const mood: MoodEntry = {
           ...entry,
           id: `mood-${Date.now()}`,
-          createdAt: new Date().toISOString(),
+          createdAt,
+          dateKey: todayLocalDateKey(),
         };
         get().addXP(calculateXP('mood'));
         set((s) => ({ moodEntries: [...s.moodEntries, mood] }));
@@ -388,6 +392,9 @@ export const useAppStore = create<AppStore>()(
           Array.isArray(merged.dayMetadata)
         ) {
           merged.dayMetadata = {};
+        }
+        if (Array.isArray(merged.moodEntries)) {
+          merged.moodEntries = merged.moodEntries.map(hydrateMoodEntry);
         }
         return merged;
       },

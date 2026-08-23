@@ -28,6 +28,9 @@ export function MonthCalendar({
   onPrevMonth,
   onNextMonth,
   canGoNextMonth,
+  markerMode = 'count',
+  activityNoun = { one: 'thing counted', other: 'things counted' },
+  compact = false,
 }: {
   year: number;
   monthIndex: number;
@@ -39,6 +42,9 @@ export function MonthCalendar({
   onPrevMonth: () => void;
   onNextMonth: () => void;
   canGoNextMonth: boolean;
+  markerMode?: 'count' | 'dot';
+  activityNoun?: { one: string; other: string };
+  compact?: boolean;
 }) {
   const theme = useAppTheme();
   const weekStartsOn = getWeekStartsOn();
@@ -46,17 +52,21 @@ export function MonthCalendar({
   const cells = buildMonthGrid(year, monthIndex, weekStartsOn);
 
   return (
-    <View style={styles.wrap}>
-      <View style={styles.monthNav}>
+    <View style={[styles.wrap, compact && styles.wrapCompact]}>
+      <View style={[styles.monthNav, compact && styles.monthNavCompact]}>
         <Pressable
           onPress={onPrevMonth}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Previous month"
-          style={({ pressed }) => [styles.monthBtn, pressed && styles.pressed]}>
+          style={({ pressed }) => [
+            styles.monthBtn,
+            compact && styles.monthBtnCompact,
+            pressed && styles.pressed,
+          ]}>
           <Text style={[styles.monthChevron, { color: theme.text }]}>{'‹'}</Text>
         </Pressable>
-        <Text style={[styles.monthTitle, { color: theme.text }]}>
+        <Text style={[styles.monthTitle, compact && styles.monthTitleCompact, { color: theme.text }]}>
           {formatMonthYear(year, monthIndex)}
         </Text>
         <Pressable
@@ -68,6 +78,7 @@ export function MonthCalendar({
           accessibilityState={{ disabled: !canGoNextMonth }}
           style={({ pressed }) => [
             styles.monthBtn,
+            compact && styles.monthBtnCompact,
             !canGoNextMonth && styles.disabled,
             pressed && canGoNextMonth && styles.pressed,
           ]}>
@@ -81,7 +92,7 @@ export function MonthCalendar({
         </Pressable>
       </View>
 
-      <View style={styles.weekRow}>
+      <View style={[styles.weekRow, compact && styles.weekRowCompact]}>
         {weekdayLabels.map((label, index) => (
           <Text key={`${label}-${index}`} style={[styles.weekday, { color: theme.textMuted }]}>
             {label}
@@ -90,7 +101,7 @@ export function MonthCalendar({
       </View>
 
       {chunkWeeks(cells).map((week) => (
-        <View key={week[0]?.dateKey} style={styles.weekRow}>
+        <View key={week[0]?.dateKey} style={[styles.weekRow, compact && styles.weekRowCompact]}>
           {week.map((cell) => {
             const isFuture = cell.dateKey > todayKey;
             const isSelected = cell.dateKey === selectedDateKey;
@@ -112,9 +123,11 @@ export function MonthCalendar({
                   isHard,
                   isToday,
                   isFuture,
+                  activityNoun,
                 })}
                 style={({ pressed }) => [
                   styles.cell,
+                  compact && styles.cellCompact,
                   isSelected && {
                     backgroundColor: theme.accent,
                     borderColor: theme.accent,
@@ -150,19 +163,34 @@ export function MonthCalendar({
                   ) : null}
                 </View>
                 {count > 0 ? (
-                  <Text
-                    style={[
-                      styles.count,
-                      {
-                        color: isSelected
-                          ? theme.selectedForegroundMuted
-                          : muted
-                            ? theme.textMuted
-                            : theme.textSecondary,
-                      },
-                    ]}>
-                    • {count}
-                  </Text>
+                  markerMode === 'dot' ? (
+                    <View
+                      style={[
+                        styles.dot,
+                        {
+                          backgroundColor: isSelected
+                            ? theme.selectedForeground
+                            : muted
+                              ? theme.textMuted
+                              : theme.accent,
+                        },
+                      ]}
+                    />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.count,
+                        {
+                          color: isSelected
+                            ? theme.selectedForegroundMuted
+                            : muted
+                              ? theme.textMuted
+                              : theme.textSecondary,
+                        },
+                      ]}>
+                      • {count}
+                    </Text>
+                  )
                 ) : (
                   <Text style={styles.countPlaceholder}> </Text>
                 )}
@@ -181,17 +209,19 @@ function dayAccessibilityLabel({
   isHard,
   isToday,
   isFuture,
+  activityNoun,
 }: {
   dateKey: string;
   count: number;
   isHard: boolean;
   isToday: boolean;
   isFuture: boolean;
+  activityNoun: { one: string; other: string };
 }): string {
   const parts = [dateKey];
   if (isToday) parts.push('today');
   if (isFuture) parts.push('future, unavailable');
-  if (count > 0) parts.push(`${count} ${count === 1 ? 'thing' : 'things'} counted`);
+  if (count > 0) parts.push(`${count} ${count === 1 ? activityNoun.one : activityNoun.other}`);
   if (isHard) parts.push('hard day');
   return parts.join(', ');
 }
@@ -202,11 +232,17 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'stretch',
   },
+  wrapCompact: {
+    maxWidth: 360,
+  },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
+  },
+  monthNavCompact: {
+    marginBottom: 4,
   },
   monthBtn: {
     width: 36,
@@ -214,6 +250,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.sm,
+  },
+  monthBtnCompact: {
+    width: 32,
+    height: 32,
   },
   monthChevron: {
     fontSize: 22,
@@ -225,9 +265,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flex: 1,
   },
+  monthTitleCompact: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+  },
   weekRow: {
     flexDirection: 'row',
     marginBottom: 6,
+  },
+  weekRowCompact: {
+    marginBottom: 2,
   },
   weekday: {
     flex: 1,
@@ -246,6 +293,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+  cellCompact: {
+    minHeight: 36,
+    paddingVertical: 2,
   },
   cellTop: {
     flexDirection: 'row',
@@ -271,6 +322,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 12,
     marginTop: 1,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 4,
   },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.35 },

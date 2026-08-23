@@ -147,9 +147,12 @@ export interface MoodEntry {
   id: string;
   mood: MoodType;
   intensity: number;
+  /** Selected “what might be affecting it?” factors. */
   tags: string[];
   note?: string;
   createdAt: string;
+  /** Local calendar day as YYYY-MM-DD. Older persisted entries may omit this. */
+  dateKey?: string;
 }
 
 export interface SleepEntry {
