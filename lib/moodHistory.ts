@@ -1,10 +1,12 @@
 import { moodOptions } from '@/data/content';
 import { dateFromDateKey, shiftDateKey, toLocalDateKey } from '@/lib/dateUtils';
+import { moodStateLabel } from '@/lib/moodState';
 import { MoodEntry, MoodType } from '@/types';
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const MOOD_PATTERN_MIN_ENTRIES = 3;
 export const MOOD_HISTORY_PREVIEW_COUNT = 4;
+const COOCCURRENCE_MIN = 3;
 
 export function getMoodDateKey(entry: Pick<MoodEntry, 'createdAt'> & { dateKey?: string }): string {
   if (typeof entry.dateKey === 'string') {
@@ -20,10 +22,30 @@ export function hydrateMoodEntry(entry: MoodEntry): MoodEntry {
   return { ...entry, dateKey };
 }
 
+/** `moods: []` means none chosen. Missing `moods` means a legacy single-mood entry. */
+export function getEntryMoods(entry: Pick<MoodEntry, 'mood' | 'moods'>): MoodType[] {
+  if (Array.isArray(entry.moods)) return entry.moods.filter(Boolean);
+  return entry.mood ? [entry.mood] : [];
+}
+
+export function factorLabel(tag: string): string {
+  const value = tag.trim().toLowerCase();
+  if (value === 'unknown') return 'not sure';
+  if (value === 'too much waiting') return 'waiting';
+  if (value === 'social') return 'social life';
+  return tag;
+}
+
+export function formatMoodList(entry: Pick<MoodEntry, 'mood' | 'moods'>): string {
+  return getEntryMoods(entry)
+    .map((id) => moodMeta(id).label)
+    .join(', ');
+}
+
 export function moodMeta(mood: MoodType | string): { id: string; label: string; emoji: string } {
   const match = moodOptions.find((option) => option.id === mood);
-  if (match) return match;
-  return { id: String(mood), label: String(mood), emoji: '💭' };
+  if (match) return { id: match.id, label: match.label, emoji: match.emoji ?? '' };
+  return { id: String(mood), label: String(mood), emoji: '' };
 }
 
 export function groupMoodsByDate(entries: MoodEntry[]): Record<string, MoodEntry[]> {
@@ -58,11 +80,11 @@ export type MoodPatternSummary = {
   days: 7 | 30;
   count: number;
   sparse: boolean;
-  averageIntensity: number | null;
   topMoods: MoodCount[];
   topFactors: { label: string; count: number }[];
   multiCheckInDays: number;
-  sentences: string[];
+  overallStateLabel: string | null;
+  cooccurrence: string[];
 };
 
 function countBy<T>(items: T[], keyOf: (item: T) => string): Map<string, number> {
@@ -99,30 +121,35 @@ export function summarizeMoodPatterns(
   todayKey: string,
 ): MoodPatternSummary {
   const inWindow = entriesInWindow(entries, days, todayKey);
-  const periodLabel = days === 7 ? 'last 7 days' : 'last 30 days';
 
   if (inWindow.length < MOOD_PATTERN_MIN_ENTRIES) {
     return {
       days,
       count: inWindow.length,
       sparse: true,
-      averageIntensity: null,
       topMoods: [],
       topFactors: [],
       multiCheckInDays: 0,
-      sentences: [],
+      overallStateLabel: null,
+      cooccurrence: [],
     };
   }
 
-  const moodCounts = ranked(countBy(inWindow, (entry) => entry.mood), (id, count) => {
-    const meta = moodMeta(id);
-    return { id, label: meta.label, emoji: meta.emoji, count };
-  });
+  const moodCounts = ranked(
+    countBy(
+      inWindow.flatMap((entry) => getEntryMoods(entry)),
+      (id) => id,
+    ),
+    (id, count) => {
+      const meta = moodMeta(id);
+      return { id, label: meta.label, emoji: meta.emoji, count };
+    },
+  );
 
   const factorCounts = ranked(
     countBy(
       inWindow.flatMap((entry) => entry.tags ?? []),
-      (tag) => tag.trim().toLowerCase(),
+      (tag) => factorLabel(tag).trim().toLowerCase(),
     ),
     (label, count) => ({ label, count }),
   );
@@ -130,80 +157,97 @@ export function summarizeMoodPatterns(
   const byDate = groupMoodsByDate(inWindow);
   const multiCheckInDays = Object.values(byDate).filter((day) => day.length > 1).length;
 
-  const intensitySum = inWindow.reduce((sum, entry) => sum + (entry.intensity ?? 0), 0);
-  const averageIntensity = roundOne(intensitySum / inWindow.length);
+  const scored = inWindow.filter(
+    (entry) => typeof entry.stateScore === 'number' && Number.isFinite(entry.stateScore),
+  );
+  const overallStateLabel =
+    scored.length > 0
+      ? `Mostly ${moodStateLabel(
+          scored.reduce((sum, entry) => sum + (entry.stateScore ?? 0), 0) / scored.length,
+        ).toLowerCase()}`
+      : null;
 
-  const sentences: string[] = [];
-  const topMood = moodCounts[0];
-  if (topMood) {
-    const times = topMood.count === 1 ? 'once' : `${topMood.count} times`;
-    sentences.push(`${topMood.label} showed up ${times} in the ${periodLabel}.`);
+  const pairCounts = countBy(
+    inWindow.flatMap((entry) => {
+      const moods = getEntryMoods(entry);
+      const tags = (entry.tags ?? []).map(factorLabel);
+      const pairs: string[] = [];
+      for (const mood of moods) {
+        for (const tag of tags) {
+          if (!tag || tag === 'not sure') continue;
+          pairs.push(`${mood}||${tag}`);
+        }
+      }
+      for (let i = 0; i < moods.length; i += 1) {
+        for (let j = i + 1; j < moods.length; j += 1) {
+          pairs.push(`${moods[i]}++${moods[j]}`);
+        }
+      }
+      return pairs;
+    }),
+    (key) => key,
+  );
+
+  const cooccurrence: string[] = [];
+  for (const item of ranked(pairCounts, (pair, count) => ({ pair, count }))) {
+    if (item.count < COOCCURRENCE_MIN) continue;
+    if (item.pair.includes('||')) {
+      const [moodId, tag] = item.pair.split('||');
+      cooccurrence.push(`${moodMeta(moodId).label} was logged with ${tag} ${item.count} times.`);
+    } else if (item.pair.includes('++')) {
+      const [a, b] = item.pair.split('++');
+      cooccurrence.push(
+        `${moodMeta(a).label} and ${moodMeta(b).label} appeared together ${item.count} times.`,
+      );
+    }
+    if (cooccurrence.length >= 3) break;
   }
-  const topFactor = factorCounts[0];
-  if (topFactor) {
-    sentences.push(
-      `${capitalize(topFactor.label)} was selected in ${topFactor.count} ${
-        topFactor.count === 1 ? 'check-in' : 'check-ins'
-      }.`,
-    );
-  }
-  sentences.push(`Your average logged intensity was ${formatIntensity(averageIntensity)} / 5.`);
 
   return {
     days,
     count: inWindow.length,
     sparse: false,
-    averageIntensity,
     topMoods: moodCounts.slice(0, 3),
     topFactors: factorCounts.slice(0, 3),
     multiCheckInDays,
-    sentences,
+    overallStateLabel,
+    cooccurrence,
   };
 }
 
-export type IntensityTrendPoint = {
+export type StateTrendPoint = {
   dateKey: string;
   weekday: string;
   average: number | null;
   count: number;
 };
 
-export function getIntensityTrend(
+export function getStateTrend(
   entries: MoodEntry[],
   days: number,
   todayKey: string,
-): IntensityTrendPoint[] {
+): StateTrendPoint[] {
   const groups = groupMoodsByDate(entries);
-  const points: IntensityTrendPoint[] = [];
+  const points: StateTrendPoint[] = [];
 
   for (let offset = days - 1; offset >= 0; offset -= 1) {
     const dateKey = shiftDateKey(todayKey, -offset);
-    const dayEntries = groups[dateKey] ?? [];
+    const scored = (groups[dateKey] ?? []).filter(
+      (entry) => typeof entry.stateScore === 'number' && Number.isFinite(entry.stateScore),
+    );
     const date = dateFromDateKey(dateKey);
-    const average =
-      dayEntries.length > 0
-        ? roundOne(
-            dayEntries.reduce((sum, entry) => sum + (entry.intensity ?? 0), 0) / dayEntries.length,
-          )
-        : null;
     points.push({
       dateKey,
-      weekday: date
-        ? date.toLocaleDateString(undefined, { weekday: 'narrow' })
-        : '',
-      average,
-      count: dayEntries.length,
+      weekday: date ? date.toLocaleDateString(undefined, { weekday: 'narrow' }) : '',
+      average:
+        scored.length > 0
+          ? roundOne(
+              scored.reduce((sum, entry) => sum + (entry.stateScore ?? 0), 0) / scored.length,
+            )
+          : null,
+      count: scored.length,
     });
   }
 
   return points;
-}
-
-export function formatIntensity(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-function capitalize(value: string): string {
-  if (!value) return value;
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

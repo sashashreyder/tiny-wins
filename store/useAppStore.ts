@@ -166,11 +166,14 @@ export const useAppStore = create<AppStore>()(
 
       addMood: (entry) => {
         const createdAt = new Date().toISOString();
+        const moods = Array.isArray(entry.moods) ? entry.moods.filter(Boolean) : [];
         const mood: MoodEntry = {
           ...entry,
           id: `mood-${Date.now()}`,
           createdAt,
           dateKey: todayLocalDateKey(),
+          moods,
+          mood: moods[0] ?? entry.mood,
         };
         get().addXP(calculateXP('mood'));
         set((s) => ({ moodEntries: [...s.moodEntries, mood] }));

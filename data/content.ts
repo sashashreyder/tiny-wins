@@ -259,24 +259,77 @@ export const tinyWinTemplates: Record<TinyWinCategory, string[]> = {
   'sleep-support': ['Started wind-down', 'Dimmed lights', 'Closed the day', 'Set tomorrow bridge'],
 };
 
-export const moodOptions: { id: MoodType; label: string; emoji: string }[] = [
-  { id: 'okay-ish', label: 'Okay-ish', emoji: '🙂' },
-  { id: 'sad', label: 'Sad', emoji: '😢' },
-  { id: 'anxious', label: 'Anxious', emoji: '😰' },
-  { id: 'irritated', label: 'Irritated', emoji: '😤' },
-  { id: 'foggy', label: 'Foggy', emoji: '🌫️' },
-  { id: 'wired', label: 'Wired', emoji: '⚡' },
-  { id: 'tired', label: 'Tired', emoji: '😴' },
-  { id: 'restless', label: 'Restless', emoji: '🌀' },
-  { id: 'hopeful', label: 'Hopeful', emoji: '🌱' },
-  { id: 'proud', label: 'Proud', emoji: '✨' },
-  { id: 'overwhelmed', label: 'Overwhelmed', emoji: '🌊' },
-  { id: 'empty', label: 'Empty', emoji: '🫥' },
+export type FeelingGroup = 'pleasant' | 'mixed' | 'unpleasant';
+
+export const moodOptions: {
+  id: MoodType;
+  label: string;
+  group: FeelingGroup;
+  emoji?: string;
+}[] = [
+  { id: 'okay-ish', label: 'Okay-ish', group: 'pleasant' },
+  { id: 'calm', label: 'Calm', group: 'pleasant' },
+  { id: 'content', label: 'Content', group: 'pleasant' },
+  { id: 'hopeful', label: 'Hopeful', group: 'pleasant' },
+  { id: 'proud', label: 'Proud', group: 'pleasant' },
+  { id: 'grateful', label: 'Grateful', group: 'pleasant' },
+  { id: 'relieved', label: 'Relieved', group: 'pleasant' },
+  { id: 'excited', label: 'Excited', group: 'pleasant' },
+  { id: 'energized', label: 'Energized', group: 'pleasant' },
+  { id: 'confident', label: 'Confident', group: 'pleasant' },
+  { id: 'connected', label: 'Connected', group: 'pleasant' },
+  { id: 'motivated', label: 'Motivated', group: 'pleasant' },
+  { id: 'curious', label: 'Curious', group: 'pleasant' },
+  { id: 'sad', label: 'Sad', group: 'unpleasant' },
+  { id: 'anxious', label: 'Anxious', group: 'unpleasant' },
+  { id: 'worried', label: 'Worried', group: 'unpleasant' },
+  { id: 'frustrated', label: 'Frustrated', group: 'unpleasant' },
+  { id: 'irritated', label: 'Irritated', group: 'unpleasant' },
+  { id: 'angry', label: 'Angry', group: 'unpleasant' },
+  { id: 'lonely', label: 'Lonely', group: 'unpleasant' },
+  { id: 'disappointed', label: 'Disappointed', group: 'unpleasant' },
+  { id: 'rejected', label: 'Rejected', group: 'unpleasant' },
+  { id: 'guilty', label: 'Guilty', group: 'unpleasant' },
+  { id: 'overwhelmed', label: 'Overwhelmed', group: 'unpleasant' },
+  { id: 'empty', label: 'Empty', group: 'unpleasant' },
+  { id: 'tired', label: 'Tired', group: 'mixed' },
+  { id: 'foggy', label: 'Foggy', group: 'mixed' },
+  { id: 'numb', label: 'Numb', group: 'mixed' },
+  { id: 'restless', label: 'Restless', group: 'mixed' },
+  { id: 'wired', label: 'Wired', group: 'mixed' },
+  { id: 'distracted', label: 'Distracted', group: 'mixed' },
+  { id: 'uncertain', label: 'Uncertain', group: 'mixed' },
+  { id: 'bored', label: 'Bored', group: 'mixed' },
+  { id: 'detached', label: 'Detached', group: 'mixed' },
 ];
 
 export const moodTags = [
-  'sleep', 'food', 'work', 'rejection', 'family', 'money', 'social',
-  'hormones', 'weather', 'medication', 'too much talking', 'too much waiting', 'unknown',
+  'sleep',
+  'health',
+  'food',
+  'fitness',
+  'self-care',
+  'hobbies',
+  'identity',
+  'community',
+  'family',
+  'friends',
+  'partner / relationship',
+  'dating',
+  'social life',
+  'tasks',
+  'work',
+  'education',
+  'home',
+  'money',
+  'travel',
+  'weather',
+  'current events',
+  'hormones',
+  'medication',
+  'waiting',
+  'overstimulation',
+  'not sure',
 ];
 
 export const sleepTags = [

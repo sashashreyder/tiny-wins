@@ -86,19 +86,41 @@ const TOOLS: Record<MoodSupportToolId, MoodSupportRecommendation> = {
   },
 };
 
-const MOOD_TOOLS: Record<MoodType, MoodSupportToolId[]> = {
+const MOOD_TOOLS: Partial<Record<MoodType, MoodSupportToolId[]>> = {
   tired: ['sleep', 'water', 'self-care'],
   foggy: ['water', 'self-care', 'focus'],
   anxious: ['brain-dump', 'self-care', 'focus'],
+  worried: ['brain-dump', 'self-care', 'focus'],
   restless: ['focus', 'brain-dump', 'self-care'],
   wired: ['brain-dump', 'focus', 'self-care'],
   overwhelmed: ['brain-dump', 'cant-start', 'focus'],
   irritated: ['brain-dump', 'self-care'],
+  frustrated: ['brain-dump', 'cant-start', 'focus'],
+  angry: ['brain-dump', 'self-care'],
   sad: ['self-care', 'tiny-wins'],
+  lonely: ['self-care', 'tiny-wins'],
   empty: ['self-care', 'tiny-wins'],
+  numb: ['self-care', 'brain-dump'],
+  detached: ['self-care', 'tiny-wins'],
+  guilty: ['brain-dump', 'self-care'],
+  disappointed: ['self-care', 'tiny-wins'],
+  rejected: ['brain-dump', 'self-care'],
   'okay-ish': ['tiny-wins', 'focus'],
+  calm: ['self-care', 'garden'],
+  content: ['tiny-wins', 'garden'],
   hopeful: ['tiny-wins', 'garden', 'focus'],
   proud: ['tiny-wins', 'garden'],
+  grateful: ['tiny-wins', 'garden'],
+  relieved: ['self-care', 'tiny-wins'],
+  excited: ['focus', 'tiny-wins'],
+  energized: ['focus', 'tiny-wins'],
+  confident: ['focus', 'tiny-wins'],
+  connected: ['tiny-wins', 'garden'],
+  motivated: ['focus', 'tiny-wins', 'cant-start'],
+  curious: ['focus', 'brain-dump'],
+  distracted: ['focus', 'brain-dump', 'water'],
+  uncertain: ['brain-dump', 'focus'],
+  bored: ['focus', 'tiny-wins'],
 };
 
 const MAX_RECOMMENDATIONS = 3;
@@ -107,27 +129,56 @@ function normalizeFactor(factor: string): string {
   return factor.trim().toLowerCase();
 }
 
-function workBoosts(mood: MoodType): MoodSupportToolId[] {
-  if (mood === 'overwhelmed') return ['cant-start', 'brain-dump', 'focus'];
-  if (mood === 'anxious' || mood === 'irritated' || mood === 'wired' || mood === 'restless') {
-    return ['brain-dump', 'focus'];
-  }
-  return ['focus', 'brain-dump'];
+function toolsForMood(mood: MoodType): MoodSupportToolId[] {
+  return MOOD_TOOLS[mood] ?? ['self-care', 'tiny-wins'];
 }
 
-function factorBoosts(factor: string, mood: MoodType): MoodSupportToolId[] {
+function factorBoosts(factor: string, moods: MoodType[]): MoodSupportToolId[] {
   switch (normalizeFactor(factor)) {
     case 'sleep':
       return ['sleep'];
+    case 'health':
     case 'food':
+    case 'fitness':
+    case 'self-care':
       return ['self-care'];
+    case 'hobbies':
+      return ['tiny-wins', 'garden'];
     case 'work':
-      return workBoosts(mood);
+    case 'tasks':
+    case 'education':
+      if (moods.includes('overwhelmed')) return ['cant-start', 'brain-dump', 'focus'];
+      if (moods.some((mood) => ['anxious', 'worried', 'irritated', 'wired', 'restless', 'frustrated'].includes(mood))) {
+        return ['brain-dump', 'focus'];
+      }
+      return ['focus', 'brain-dump'];
+    case 'waiting':
     case 'too much waiting':
       return ['brain-dump', 'self-care'];
+    case 'overstimulation':
     case 'too much talking':
+      return ['self-care', 'brain-dump'];
+    case 'family':
+    case 'friends':
+    case 'partner / relationship':
+    case 'dating':
+    case 'social life':
+    case 'community':
+    case 'identity':
+      return ['self-care', 'brain-dump'];
+    case 'home':
+      return ['cant-start', 'tiny-wins'];
+    case 'money':
+    case 'current events':
+      return ['brain-dump', 'self-care'];
+    case 'hormones':
+    case 'medication':
+      return ['self-care', 'sleep'];
+    case 'travel':
+    case 'weather':
       return ['self-care'];
     case 'unknown':
+    case 'not sure':
       return [];
     default:
       return [];
@@ -149,19 +200,26 @@ function prependUnique(
 }
 
 export function getMoodSupportRecommendations(
-  mood: MoodType,
+  moods: MoodType | MoodType[],
   factors: string[] = [],
 ): MoodSupportRecommendation[] {
-  const ids = [...(MOOD_TOOLS[mood] ?? ['self-care', 'tiny-wins'])];
-  const boosted: MoodSupportToolId[] = [];
+  const selected = (Array.isArray(moods) ? moods : [moods]).filter(Boolean);
+  const ids: MoodSupportToolId[] = [];
 
+  for (const mood of selected) {
+    for (const id of toolsForMood(mood)) {
+      if (!ids.includes(id)) ids.push(id);
+    }
+  }
+
+  const boosted: MoodSupportToolId[] = [];
   for (const factor of factors) {
-    for (const id of factorBoosts(factor, mood)) {
+    for (const id of factorBoosts(factor, selected)) {
       if (!boosted.includes(id)) boosted.push(id);
     }
   }
 
-  const ranked = prependUnique(ids, boosted);
+  const ranked = prependUnique(ids.length ? ids : ['self-care', 'tiny-wins'], boosted);
   const unique: MoodSupportToolId[] = [];
   for (const id of ranked) {
     if (!unique.includes(id)) unique.push(id);

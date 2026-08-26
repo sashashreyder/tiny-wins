@@ -66,17 +66,39 @@ export interface StuckTypeOption {
 
 export type MoodType =
   | 'okay-ish'
-  | 'sad'
-  | 'anxious'
-  | 'irritated'
-  | 'foggy'
-  | 'wired'
-  | 'tired'
-  | 'restless'
+  | 'calm'
+  | 'content'
   | 'hopeful'
   | 'proud'
+  | 'grateful'
+  | 'relieved'
+  | 'excited'
+  | 'energized'
+  | 'confident'
+  | 'connected'
+  | 'motivated'
+  | 'curious'
+  | 'sad'
+  | 'anxious'
+  | 'worried'
+  | 'frustrated'
+  | 'irritated'
+  | 'angry'
+  | 'lonely'
+  | 'disappointed'
+  | 'rejected'
+  | 'guilty'
   | 'overwhelmed'
-  | 'empty';
+  | 'empty'
+  | 'tired'
+  | 'foggy'
+  | 'numb'
+  | 'restless'
+  | 'wired'
+  | 'distracted'
+  | 'uncertain'
+  | 'bored'
+  | 'detached';
 
 export type WakeFeeling =
   | 'refreshed'
@@ -145,9 +167,15 @@ export interface TinyWin {
 
 export interface MoodEntry {
   id: string;
+  /** First selected descriptor, or a safe fallback when none were chosen. */
   mood: MoodType;
-  intensity: number;
-  /** Selected “what might be affecting it?” factors. */
+  /** Selected descriptors. `[]` means none chosen. Omitted on older entries. */
+  moods?: MoodType[];
+  /** Overall state from -3 (very unpleasant) to +3 (very pleasant). New entries. */
+  stateScore?: number;
+  /** Legacy 1–5 intensity. Older entries may have this; new entries usually omit it. */
+  intensity?: number;
+  /** Impact tags. */
   tags: string[];
   note?: string;
   createdAt: string;

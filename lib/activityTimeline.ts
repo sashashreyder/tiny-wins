@@ -1,6 +1,6 @@
 import { moodOptions } from '@/data/content';
 import { startOfLocalDayMs, toLocalDateKey } from '@/lib/dateUtils';
-import { getMoodDateKey } from '@/lib/moodHistory';
+import { getMoodDateKey, getEntryMoods } from '@/lib/moodHistory';
 import {
   ActivityEntry,
   ActivitySource,
@@ -67,9 +67,10 @@ function moodLabel(mood: MoodType): string | undefined {
   return moodOptions.find((option) => option.id === mood)?.label;
 }
 
-function formatMoodTitle(mood: MoodType): string {
-  const label = moodLabel(mood);
-  return label ? `Checked in with my mood — ${label}` : 'Checked in with my mood';
+function formatMoodTitle(moods: MoodType[]): string {
+  const labels = moods.map((mood) => moodLabel(mood)).filter(Boolean);
+  if (labels.length === 0) return 'Checked in with my mood';
+  return `Checked in with my mood — ${labels.join(', ')}`;
 }
 
 function formatFocusTitle(duration: number): string {
@@ -179,13 +180,14 @@ export function buildActivityTimeline(state: ActivityTimelineState): ActivityEnt
   }
 
   for (const entry of state.moodEntries ?? []) {
+    const moods = getEntryMoods(entry);
     entries.push({
       id: `mood:${entry.id}`,
       source: 'mood',
-      title: formatMoodTitle(entry.mood),
+      title: formatMoodTitle(moods),
       dateKey: getMoodDateKey(entry),
       createdAt: entry.createdAt,
-      category: moodLabel(entry.mood),
+      category: moodLabel(moods[0] ?? entry.mood),
       note: entry.note,
     });
   }

@@ -137,63 +137,58 @@ export function MonthCalendar({
                   },
                   pressed && !isFuture && styles.pressed,
                 ]}>
-                <View style={styles.cellTop}>
+                <Text
+                  style={[
+                    styles.dayNumber,
+                    {
+                      color: isSelected
+                        ? theme.selectedForeground
+                        : muted
+                          ? theme.textMuted
+                          : theme.text,
+                      fontWeight: isSelected || isToday ? '700' : '500',
+                    },
+                  ]}>
+                  {cell.day}
+                </Text>
+                {isHard ? (
                   <Text
                     style={[
-                      styles.dayNumber,
+                      styles.hardMark,
+                      { color: isSelected ? theme.selectedForeground : theme.accent },
+                    ]}>
+                    ♡
+                  </Text>
+                ) : null}
+                {count > 0 && markerMode === 'dot' ? (
+                  <View
+                    style={[
+                      styles.dot,
                       {
-                        color: isSelected
+                        backgroundColor: isSelected
                           ? theme.selectedForeground
                           : muted
                             ? theme.textMuted
-                            : theme.text,
-                        fontWeight: isSelected || isToday ? '700' : '500',
+                            : theme.accent,
+                      },
+                    ]}
+                  />
+                ) : null}
+                {count > 0 && markerMode === 'count' ? (
+                  <Text
+                    style={[
+                      styles.count,
+                      {
+                        color: isSelected
+                          ? theme.selectedForegroundMuted
+                          : muted
+                            ? theme.textMuted
+                            : theme.textSecondary,
                       },
                     ]}>
-                    {cell.day}
+                    • {count}
                   </Text>
-                  {isHard ? (
-                    <Text
-                      style={[
-                        styles.hardMark,
-                        { color: isSelected ? theme.selectedForeground : theme.accent },
-                      ]}>
-                      ♡
-                    </Text>
-                  ) : null}
-                </View>
-                {count > 0 ? (
-                  markerMode === 'dot' ? (
-                    <View
-                      style={[
-                        styles.dot,
-                        {
-                          backgroundColor: isSelected
-                            ? theme.selectedForeground
-                            : muted
-                              ? theme.textMuted
-                              : theme.accent,
-                        },
-                      ]}
-                    />
-                  ) : (
-                    <Text
-                      style={[
-                        styles.count,
-                        {
-                          color: isSelected
-                            ? theme.selectedForegroundMuted
-                            : muted
-                              ? theme.textMuted
-                              : theme.textSecondary,
-                        },
-                      ]}>
-                      • {count}
-                    </Text>
-                  )
-                ) : (
-                  <Text style={styles.countPlaceholder}> </Text>
-                )}
+                ) : null}
               </Pressable>
             );
           })}
@@ -286,48 +281,43 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     minHeight: 48,
-    paddingVertical: 4,
     paddingHorizontal: 2,
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: 'transparent',
+    position: 'relative',
   },
   cellCompact: {
-    minHeight: 36,
-    paddingVertical: 2,
-  },
-  cellTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
+    minHeight: 42,
   },
   dayNumber: {
     ...typography.caption,
     fontSize: 13,
     lineHeight: 16,
+    textAlign: 'center',
   },
   hardMark: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
     fontSize: 10,
     lineHeight: 12,
   },
   count: {
+    position: 'absolute',
+    bottom: 2,
     fontSize: 10,
     lineHeight: 12,
     fontWeight: '600',
-    marginTop: 1,
-  },
-  countPlaceholder: {
-    fontSize: 10,
-    lineHeight: 12,
-    marginTop: 1,
   },
   dot: {
+    position: 'absolute',
+    bottom: 4,
     width: 5,
     height: 5,
     borderRadius: 3,
-    marginTop: 4,
   },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.35 },
