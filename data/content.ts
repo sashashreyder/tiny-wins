@@ -267,7 +267,6 @@ export const moodOptions: {
   group: FeelingGroup;
   emoji?: string;
 }[] = [
-  { id: 'okay-ish', label: 'Okay-ish', group: 'pleasant' },
   { id: 'calm', label: 'Calm', group: 'pleasant' },
   { id: 'content', label: 'Content', group: 'pleasant' },
   { id: 'hopeful', label: 'Hopeful', group: 'pleasant' },
@@ -280,6 +279,20 @@ export const moodOptions: {
   { id: 'connected', label: 'Connected', group: 'pleasant' },
   { id: 'motivated', label: 'Motivated', group: 'pleasant' },
   { id: 'curious', label: 'Curious', group: 'pleasant' },
+  { id: 'happy', label: 'Happy', group: 'pleasant' },
+  { id: 'playful', label: 'Playful', group: 'pleasant' },
+  { id: 'okay-ish', label: 'Okay-ish', group: 'mixed' },
+  { id: 'uncertain', label: 'Uncertain', group: 'mixed' },
+  { id: 'tired', label: 'Tired', group: 'mixed' },
+  { id: 'foggy', label: 'Foggy', group: 'mixed' },
+  { id: 'numb', label: 'Numb', group: 'mixed' },
+  { id: 'restless', label: 'Restless', group: 'mixed' },
+  { id: 'wired', label: 'Wired', group: 'mixed' },
+  { id: 'distracted', label: 'Distracted', group: 'mixed' },
+  { id: 'bored', label: 'Bored', group: 'mixed' },
+  { id: 'detached', label: 'Detached', group: 'mixed' },
+  { id: 'surprised', label: 'Surprised', group: 'mixed' },
+  { id: 'thoughtful', label: 'Thoughtful', group: 'mixed' },
   { id: 'sad', label: 'Sad', group: 'unpleasant' },
   { id: 'anxious', label: 'Anxious', group: 'unpleasant' },
   { id: 'worried', label: 'Worried', group: 'unpleasant' },
@@ -292,45 +305,43 @@ export const moodOptions: {
   { id: 'guilty', label: 'Guilty', group: 'unpleasant' },
   { id: 'overwhelmed', label: 'Overwhelmed', group: 'unpleasant' },
   { id: 'empty', label: 'Empty', group: 'unpleasant' },
-  { id: 'tired', label: 'Tired', group: 'mixed' },
-  { id: 'foggy', label: 'Foggy', group: 'mixed' },
-  { id: 'numb', label: 'Numb', group: 'mixed' },
-  { id: 'restless', label: 'Restless', group: 'mixed' },
-  { id: 'wired', label: 'Wired', group: 'mixed' },
-  { id: 'distracted', label: 'Distracted', group: 'mixed' },
-  { id: 'uncertain', label: 'Uncertain', group: 'mixed' },
-  { id: 'bored', label: 'Bored', group: 'mixed' },
-  { id: 'detached', label: 'Detached', group: 'mixed' },
+  { id: 'stressed', label: 'Stressed', group: 'unpleasant' },
+  { id: 'scared', label: 'Scared', group: 'unpleasant' },
 ];
 
-export const moodTags = [
+export const PRIMARY_MOOD_TAGS = [
   'sleep',
   'health',
+  'work',
+  'tasks',
+  'family',
+  'friends',
+  'relationship',
+  'money',
+  'home',
+  'self-care',
+  'social life',
+  'hormones',
+  'not sure',
+];
+
+export const MORE_MOOD_TAGS = [
   'food',
   'fitness',
-  'self-care',
   'hobbies',
   'identity',
   'community',
-  'family',
-  'friends',
-  'partner / relationship',
   'dating',
-  'social life',
-  'tasks',
-  'work',
   'education',
-  'home',
-  'money',
   'travel',
   'weather',
   'current events',
-  'hormones',
   'medication',
   'waiting',
   'overstimulation',
-  'not sure',
 ];
+
+export const moodTags = [...PRIMARY_MOOD_TAGS, ...MORE_MOOD_TAGS];
 
 export const sleepTags = [
   'melatonin', 'caffeine', 'alcohol', 'late screen', 'stress', 'noise', 'nap', 'unknown',

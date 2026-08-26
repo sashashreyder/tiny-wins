@@ -11,6 +11,8 @@ interface AppModalProps {
   primaryAction?: { label: string; onPress: () => void };
   secondaryAction?: { label: string; onPress: () => void };
   children?: React.ReactNode;
+  wide?: boolean;
+  placement?: 'center' | 'bottom';
 }
 
 export function AppModal({
@@ -21,15 +23,28 @@ export function AppModal({
   primaryAction,
   secondaryAction,
   children,
+  wide,
+  placement = 'center',
 }: AppModalProps) {
   const theme = useAppTheme();
+  const bottom = placement === 'bottom';
 
   return (
     <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
+      <View style={[styles.overlay, bottom && styles.overlayBottom]}>
         <Pressable
-          style={[styles.content, { backgroundColor: theme.backgroundAlt, borderColor: theme.surfaceBorder }]}
-          onPress={(e) => e.stopPropagation()}>
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        />
+        <View
+          style={[
+            styles.content,
+            wide && styles.contentWide,
+            bottom && styles.contentBottom,
+            { backgroundColor: theme.backgroundAlt, borderColor: theme.surfaceBorder },
+          ]}>
           <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
           {message ? (
             <Text style={[styles.message, { color: theme.textSecondary }]}>{message}</Text>
@@ -56,8 +71,8 @@ export function AppModal({
               <GradientButton label="Got it" onPress={onClose} small style={{ flex: 1 }} />
             )}
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </RNModal>
   );
 }
@@ -70,13 +85,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.lg,
   },
+  overlayBottom: {
+    justifyContent: 'flex-end',
+    padding: 0,
+  },
   content: {
     width: '100%',
     maxWidth: 420,
+    maxHeight: '80%',
     borderRadius: radii.lg,
     borderWidth: 1,
     padding: spacing.lg,
     gap: spacing.md,
+    zIndex: 1,
+  },
+  contentWide: {
+    maxWidth: 560,
+  },
+  contentBottom: {
+    maxWidth: 720,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   title: { ...typography.h2 },
   message: { ...typography.body },

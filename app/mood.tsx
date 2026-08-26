@@ -12,9 +12,10 @@ import {
 import { useRouter } from 'expo-router';
 import { AppShell } from '@/components/design-system/AppShell';
 import { GradientButton } from '@/components/design-system/Buttons';
+import { AppModal } from '@/components/design-system/Modal';
 import { ScreenContainer } from '@/components/design-system/ScreenContainer';
 import { MonthCalendar } from '@/components/tiny-wins/MonthCalendar';
-import { moodTags } from '@/data/content';
+import { FeelingGroup, MORE_MOOD_TAGS, PRIMARY_MOOD_TAGS } from '@/data/content';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import {
   dateFromDateKey,
@@ -36,9 +37,12 @@ import {
 } from '@/lib/moodHistory';
 import {
   fallbackMoodFromScore,
+  feelingGroupForScore,
+  feelingGroupLabels,
   feelingsByGroup,
+  moreFeelings,
   moodStateLabel,
-  recommendedFeelings,
+  primaryFeelings,
 } from '@/lib/moodState';
 import { getMoodSupportRecommendations, MoodSupportRecommendation } from '@/lib/moodSupport';
 import { AppTheme, radii, spacing, typography } from '@/lib/theme';
@@ -49,6 +53,7 @@ const CHECKIN_MAX_WIDTH = 680;
 const PAGE_MAX_WIDTH = 1080;
 const HISTORY_WIDE = 900;
 const NO_HARD_DAYS: Record<string, boolean> = {};
+const FEELING_TABS: FeelingGroup[] = ['pleasant', 'mixed', 'unpleasant'];
 
 function accentTint(isDark: boolean): string {
   return isDark ? 'rgba(255, 138, 122, 0.2)' : 'rgba(255, 138, 122, 0.14)';
@@ -64,11 +69,16 @@ function formatHistoryDate(dateKey: string): string {
   });
 }
 
+function formatFeelingList(ids: MoodType[]): string {
+  return ids.map((id) => moodMeta(id).label).join(' · ');
+}
+
 export default function MoodScreen() {
   const theme = useAppTheme();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isWide = width >= HISTORY_WIDE;
+  const overlayPlacement = width >= 720 ? 'center' : 'bottom';
   const addMood = useAppStore((s) => s.addMood);
   const moodEntries = useAppStore((s) => s.moodEntries);
 
@@ -78,7 +88,6 @@ export default function MoodScreen() {
   const [feelings, setFeelings] = useState<MoodType[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const [showAllFeelings, setShowAllFeelings] = useState(false);
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey);
   const [visibleMonth, setVisibleMonth] = useState(() => monthFromDateKey(todayKey));
   const [showAllEntries, setShowAllEntries] = useState(false);
@@ -89,6 +98,10 @@ export default function MoodScreen() {
     tags: string[];
   } | null>(null);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [feelingsOpen, setFeelingsOpen] = useState(false);
+  const [browseOtherFeelings, setBrowseOtherFeelings] = useState(false);
+  const [feelingTab, setFeelingTab] = useState<FeelingGroup>('mixed');
+  const [impactsOpen, setImpactsOpen] = useState(false);
 
   const moodsByDate = useMemo(() => groupMoodsByDate(moodEntries), [moodEntries]);
   const countByDate = useMemo(() => moodCountByDate(moodEntries), [moodEntries]);
@@ -114,7 +127,11 @@ export default function MoodScreen() {
     () => (patterns.sparse ? [] : getStateTrend(moodEntries, patternDays, todayKey)),
     [moodEntries, patternDays, patterns.sparse, todayKey],
   );
-  const recommended = useMemo(() => recommendedFeelings(stateScore), [stateScore]);
+  const suggestedFeelings = useMemo(() => primaryFeelings(stateScore), [stateScore]);
+  const extraFeelings = useMemo(() => moreFeelings(stateScore), [stateScore]);
+  const overlayFeelings = browseOtherFeelings
+    ? feelingsByGroup(feelingTab)
+    : extraFeelings;
   const recommendations = savedCheckIn
     ? getMoodSupportRecommendations(savedCheckIn.feelings, savedCheckIn.tags)
     : [];
@@ -139,6 +156,12 @@ export default function MoodScreen() {
     setVisibleMonth(monthFromDateKey(dateKey));
   };
 
+  const openFeelingsMore = () => {
+    setBrowseOtherFeelings(false);
+    setFeelingTab(feelingGroupForScore(stateScore));
+    setFeelingsOpen(true);
+  };
+
   const save = () => {
     addMood({
       mood: feelings[0] ?? fallbackMoodFromScore(stateScore),
@@ -149,243 +172,223 @@ export default function MoodScreen() {
     });
     setSavedCheckIn({ feelings, stateScore, tags });
     setSupportOpen(false);
-    setNote('');
+    setFeelingsOpen(false);
+    setImpactsOpen(false);
   };
 
-  const savedLabels = savedCheckIn
-    ? savedCheckIn.feelings.map((id) => moodMeta(id).label).join(' · ')
-    : '';
+  const resetCheckIn = () => {
+    setSavedCheckIn(null);
+    setSupportOpen(false);
+    setStep(1);
+    setStateScore(0);
+    setFeelings([]);
+    setTags([]);
+    setNote('');
+    setBrowseOtherFeelings(false);
+  };
+
+  const question =
+    step === 1
+      ? 'How are you feeling right now?'
+      : step === 2
+        ? 'What best describes this feeling?'
+        : step === 3
+          ? 'What’s having the biggest impact on you right now?'
+          : 'Anything else you want to remember?';
+  const supportCopy =
+    step === 1
+      ? 'Start with the overall feeling.'
+      : step === 2
+        ? 'Choose anything that fits.'
+        : step === 3
+          ? 'Choose anything that feels relevant.'
+          : 'Optional.';
+
+  const savedLabels = savedCheckIn ? formatFeelingList(savedCheckIn.feelings) : '';
 
   return (
     <AppShell title="Mood Tracker">
       <ScreenContainer>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.page}>
-            <View style={styles.checkIn}>
-              {step <= 3 ? (
-                <Text style={[styles.progress, { color: theme.textMuted }]}>{step} of 3</Text>
-              ) : null}
-
-              {step === 1 ? (
-                <View>
-                  <Text style={[styles.question, { color: theme.text }]}>
-                    How are you feeling right now?
-                  </Text>
-                  <Text style={[styles.supportCopy, { color: theme.textSecondary }]}>
-                    Start with the overall feeling. You can describe it more precisely next.
-                  </Text>
-                  <StateSlider value={stateScore} onChange={setStateScore} theme={theme} />
-                  <GradientButton
-                    label="Continue"
-                    onPress={() => setStep(2)}
-                    small
-                    style={styles.primaryBtn}
-                  />
-                </View>
-              ) : null}
-
-              {step === 2 ? (
-                <View>
-                  <Text style={[styles.question, { color: theme.text }]}>
-                    What best describes this feeling?
-                  </Text>
-                  <Text style={[styles.supportCopy, { color: theme.textSecondary }]}>
-                    Choose anything that fits. Mixed feelings are completely fine.
-                  </Text>
-                  {feelings.length > 0 ? (
-                    <View style={styles.selectedWrap}>
-                      {feelings.map((id) => (
-                        <FeelingChip
-                          key={`selected-${id}`}
-                          label={moodMeta(id).label}
-                          selected
-                          theme={theme}
-                          onPress={() => toggleFeeling(id)}
-                        />
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={[styles.hint, { color: theme.textMuted }]}>
-                      None selected — that’s okay.
+            <View style={[styles.checkIn, { minHeight: isWide ? 520 : 420 }]}>
+              {savedCheckIn ? (
+                <>
+                  <View>
+                    <Text style={[styles.savedTitle, { color: theme.text }]}>✓ Logged</Text>
+                    {savedLabels ? (
+                      <Text style={[styles.savedDetail, { color: theme.text }]}>{savedLabels}</Text>
+                    ) : null}
+                    <Text style={[styles.savedState, { color: theme.textSecondary }]}>
+                      {moodStateLabel(savedCheckIn.stateScore)}
                     </Text>
-                  )}
-                  <Text style={[styles.groupLabel, { color: theme.text }]}>
-                    Recommended for this overall state
-                  </Text>
-                  <View style={styles.chipGrid}>
-                    {recommended.map((option) => (
-                      <FeelingChip
-                        key={option.id}
-                        label={option.label}
-                        selected={feelings.includes(option.id)}
-                        theme={theme}
-                        onPress={() => toggleFeeling(option.id)}
-                      />
-                    ))}
                   </View>
-                  <Pressable
-                    onPress={() => setShowAllFeelings((open) => !open)}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
-                    <Text style={[styles.textBtnLabel, { color: theme.accent }]}>
-                      {showAllFeelings ? 'Hide full list' : 'Show all feelings'}
+                  <View style={styles.loggedBody}>
+                    {supportOpen ? (
+                      <View style={styles.supportList}>
+                        {recommendations.map((rec) => (
+                          <SupportRecRow
+                            key={rec.id}
+                            rec={rec}
+                            theme={theme}
+                            onOpen={() => router.push(rec.route as never)}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={styles.stepNav}>
+                    <Pressable
+                      onPress={resetCheckIn}
+                      accessibilityRole="button"
+                      style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
+                      <Text style={[styles.textBtnLabel, { color: theme.textMuted }]}>Done</Text>
+                    </Pressable>
+                    {!supportOpen ? (
+                      <Pressable
+                        onPress={() => setSupportOpen(true)}
+                        accessibilityRole="button"
+                        style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
+                        <Text style={[styles.textBtnLabel, { color: theme.accent }]}>
+                          Want support?
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <View />
+                    )}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View>
+                    {step <= 3 ? (
+                      <Text style={[styles.progress, { color: theme.textMuted }]}>{step} of 3</Text>
+                    ) : null}
+                    <Text style={[styles.question, { color: theme.text }]}>{question}</Text>
+                    <Text style={[styles.supportCopy, { color: theme.textSecondary }]}>
+                      {supportCopy}
                     </Text>
-                  </Pressable>
-                  {showAllFeelings ? (
-                    <View style={styles.allFeelings}>
-                      <FeelingGroup
-                        title="Pleasant"
-                        ids={feelingsByGroup('pleasant').map((item) => item.id)}
-                        selected={feelings}
-                        onToggle={toggleFeeling}
-                        theme={theme}
-                      />
-                      <FeelingGroup
-                        title="Mixed / low-energy"
-                        ids={feelingsByGroup('mixed').map((item) => item.id)}
-                        selected={feelings}
-                        onToggle={toggleFeeling}
-                        theme={theme}
-                      />
-                      <FeelingGroup
-                        title="Unpleasant"
-                        ids={feelingsByGroup('unpleasant').map((item) => item.id)}
-                        selected={feelings}
-                        onToggle={toggleFeeling}
-                        theme={theme}
-                      />
-                    </View>
-                  ) : null}
-                  <View style={styles.stepNav}>
-                    <Pressable
-                      onPress={() => setStep(1)}
-                      accessibilityRole="button"
-                      style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
-                      <Text style={[styles.textBtnLabel, { color: theme.textMuted }]}>Back</Text>
-                    </Pressable>
-                    <GradientButton
-                      label="Continue"
-                      onPress={() => setStep(3)}
-                      small
-                      style={styles.primaryBtn}
-                    />
                   </View>
-                </View>
-              ) : null}
 
-              {step === 3 ? (
-                <View>
-                  <Text style={[styles.question, { color: theme.text }]}>
-                    What’s having the biggest impact on you right now?
-                  </Text>
-                  <Text style={[styles.supportCopy, { color: theme.textSecondary }]}>
-                    Choose anything that feels relevant.
-                  </Text>
-                  <View style={styles.chipGrid}>
-                    {moodTags.map((tag) => (
-                      <FeelingChip
-                        key={tag}
-                        label={tag}
-                        selected={tags.includes(tag)}
-                        theme={theme}
-                        onPress={() => toggleTag(tag)}
-                      />
-                    ))}
-                  </View>
-                  <View style={styles.stepNav}>
-                    <Pressable
-                      onPress={() => setStep(2)}
-                      accessibilityRole="button"
-                      style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
-                      <Text style={[styles.textBtnLabel, { color: theme.textMuted }]}>Back</Text>
-                    </Pressable>
-                    <GradientButton
-                      label="Continue"
-                      onPress={() => setStep(4)}
-                      small
-                      style={styles.primaryBtn}
-                    />
-                  </View>
-                </View>
-              ) : null}
+                  <View style={styles.stepBody}>
+                    {step === 1 ? (
+                      <StateSlider value={stateScore} onChange={setStateScore} theme={theme} />
+                    ) : null}
 
-              {step === 4 ? (
-                <View>
-                  <Text style={[styles.question, { color: theme.text }]}>
-                    Anything else you want to remember?
-                  </Text>
-                  <Text style={[styles.supportCopy, { color: theme.textSecondary }]}>
-                    Optional. You can log this check-in as it is.
-                  </Text>
-                  <TextInput
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder="Optional note..."
-                    placeholderTextColor={theme.textMuted}
-                    multiline
-                    style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder }]}
-                  />
-                  <View style={styles.stepNav}>
-                    <Pressable
-                      onPress={() => setStep(3)}
-                      accessibilityRole="button"
-                      style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
-                      <Text style={[styles.textBtnLabel, { color: theme.textMuted }]}>Back</Text>
-                    </Pressable>
-                    <GradientButton
-                      label="Log check-in"
-                      onPress={save}
-                      small
-                      style={styles.primaryBtn}
-                    />
-                  </View>
-                  {savedCheckIn ? (
-                    <View style={styles.savedInline}>
-                      <Text style={[styles.savedTitle, { color: theme.text }]}>
-                        ✓ Logged
-                      </Text>
-                      <Text style={[styles.savedDetail, { color: theme.textSecondary }]}>
-                        {savedLabels || moodStateLabel(savedCheckIn.stateScore)}
-                      </Text>
-                      {!supportOpen ? (
+                    {step === 2 ? (
+                      <View>
+                        <View style={styles.chipGrid}>
+                          {suggestedFeelings.map((option) => (
+                            <FeelingChip
+                              key={option.id}
+                              label={option.label}
+                              selected={feelings.includes(option.id)}
+                              theme={theme}
+                              onPress={() => toggleFeeling(option.id)}
+                            />
+                          ))}
+                        </View>
                         <Pressable
-                          onPress={() => setSupportOpen(true)}
+                          onPress={openFeelingsMore}
                           accessibilityRole="button"
                           style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
                           <Text style={[styles.textBtnLabel, { color: theme.accent }]}>
-                            Want support?
+                            More feelings
                           </Text>
                         </Pressable>
-                      ) : (
-                        <View style={styles.supportArea}>
-                          <Text style={[styles.supportTitle, { color: theme.text }]}>
-                            Want a little support?
-                          </Text>
-                          <View style={[styles.recs, !isWide && styles.recsStack]}>
-                            {recommendations.map((rec) => (
-                              <SupportRecCard
-                                key={rec.id}
-                                rec={rec}
-                                theme={theme}
-                                stacked={!isWide}
-                                onOpen={() => router.push(rec.route as never)}
-                              />
-                            ))}
-                          </View>
-                          <Pressable
-                            onPress={() => setSupportOpen(false)}
-                            accessibilityRole="button"
-                            style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
-                            <Text style={[styles.textBtnLabel, { color: theme.textMuted }]}>
-                              Hide suggestions
-                            </Text>
-                          </Pressable>
+                      </View>
+                    ) : null}
+
+                    {step === 3 ? (
+                      <View>
+                        <View style={styles.chipGrid}>
+                          {PRIMARY_MOOD_TAGS.map((tag) => (
+                            <FeelingChip
+                              key={tag}
+                              label={tag}
+                              selected={tags.includes(tag)}
+                              theme={theme}
+                              onPress={() => toggleTag(tag)}
+                            />
+                          ))}
                         </View>
+                        <Pressable
+                          onPress={() => setImpactsOpen(true)}
+                          accessibilityRole="button"
+                          style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
+                          <Text style={[styles.textBtnLabel, { color: theme.accent }]}>More</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
+
+                    {step === 4 ? (
+                      <TextInput
+                        value={note}
+                        onChangeText={setNote}
+                        placeholder="Optional note..."
+                        placeholderTextColor={theme.textMuted}
+                        multiline
+                        style={[
+                          styles.input,
+                          { color: theme.text, borderColor: theme.surfaceBorder },
+                        ]}
+                      />
+                    ) : null}
+                  </View>
+
+                  <View>
+                    <View style={styles.summarySlot}>
+                      {step === 2 && feelings.length > 0 ? (
+                        <View>
+                          <Text style={[styles.summaryKicker, { color: theme.textMuted }]}>
+                            Selected
+                          </Text>
+                          <Text style={[styles.summaryText, { color: theme.text }]}>
+                            {formatFeelingList(feelings)}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {step === 3 && tags.length > 0 ? (
+                        <View>
+                          <Text style={[styles.summaryKicker, { color: theme.textMuted }]}>
+                            Selected
+                          </Text>
+                          <Text style={[styles.summaryText, { color: theme.text }]}>
+                            {tags.join(' · ')}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <View style={styles.stepNav}>
+                      {step > 1 ? (
+                        <Pressable
+                          onPress={() => setStep((current) => (current - 1) as 1 | 2 | 3)}
+                          accessibilityRole="button"
+                          style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
+                          <Text style={[styles.textBtnLabel, { color: theme.textMuted }]}>Back</Text>
+                        </Pressable>
+                      ) : (
+                        <View />
+                      )}
+                      {step < 4 ? (
+                        <GradientButton
+                          label="Continue"
+                          onPress={() => setStep((current) => (current + 1) as 2 | 3 | 4)}
+                          small
+                          style={styles.primaryBtn}
+                        />
+                      ) : (
+                        <GradientButton
+                          label="Log check-in"
+                          onPress={save}
+                          small
+                          style={styles.primaryBtn}
+                        />
                       )}
                     </View>
-                  ) : null}
-                </View>
-              ) : null}
+                  </View>
+                </>
+              )}
             </View>
 
             <View style={styles.section}>
@@ -585,6 +588,93 @@ export default function MoodScreen() {
           </View>
         </ScrollView>
       </ScreenContainer>
+
+      <AppModal
+        visible={feelingsOpen}
+        onClose={() => setFeelingsOpen(false)}
+        title="More feelings"
+        wide
+        placement={overlayPlacement}
+        primaryAction={{ label: 'Done', onPress: () => setFeelingsOpen(false) }}>
+        <ScrollView style={styles.overlayScroll} keyboardShouldPersistTaps="handled">
+          {browseOtherFeelings ? (
+            <View style={styles.tabRow}>
+              {FEELING_TABS.map((group) => {
+                const selected = feelingTab === group;
+                return (
+                  <Pressable
+                    key={group}
+                    onPress={() => setFeelingTab(group)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    style={({ pressed }) => [
+                      styles.tab,
+                      {
+                        borderColor: selected ? theme.accent : theme.surfaceBorder,
+                        backgroundColor: selected ? accentTint(theme.mode === 'dark') : 'transparent',
+                      },
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.tabLabel,
+                        { color: theme.text, fontWeight: selected ? '700' : '600' },
+                      ]}>
+                      {feelingGroupLabels[group]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+          <View style={styles.chipGrid}>
+            {overlayFeelings.map((option) => (
+              <FeelingChip
+                key={option.id}
+                label={option.label}
+                selected={feelings.includes(option.id)}
+                theme={theme}
+                onPress={() => toggleFeeling(option.id)}
+              />
+            ))}
+          </View>
+          {!browseOtherFeelings ? (
+            <Pressable
+              onPress={() => {
+                setFeelingTab(feelingGroupForScore(stateScore));
+                setBrowseOtherFeelings(true);
+              }}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
+              <Text style={[styles.textBtnLabel, { color: theme.accent }]}>
+                Add a different feeling
+              </Text>
+            </Pressable>
+          ) : null}
+        </ScrollView>
+      </AppModal>
+
+      <AppModal
+        visible={impactsOpen}
+        onClose={() => setImpactsOpen(false)}
+        title="More"
+        wide
+        placement={overlayPlacement}
+        primaryAction={{ label: 'Done', onPress: () => setImpactsOpen(false) }}>
+        <ScrollView style={styles.overlayScroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.chipGrid}>
+            {MORE_MOOD_TAGS.map((tag) => (
+              <FeelingChip
+                key={tag}
+                label={tag}
+                selected={tags.includes(tag)}
+                theme={theme}
+                onPress={() => toggleTag(tag)}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      </AppModal>
     </AppShell>
   );
 }
@@ -692,37 +782,6 @@ function FeelingChip({
   );
 }
 
-function FeelingGroup({
-  title,
-  ids,
-  selected,
-  onToggle,
-  theme,
-}: {
-  title: string;
-  ids: MoodType[];
-  selected: MoodType[];
-  onToggle: (id: MoodType) => void;
-  theme: AppTheme;
-}) {
-  return (
-    <View style={styles.feelingGroup}>
-      <Text style={[styles.groupLabel, { color: theme.textMuted }]}>{title}</Text>
-      <View style={styles.chipGrid}>
-        {ids.map((id) => (
-          <FeelingChip
-            key={id}
-            label={moodMeta(id).label}
-            selected={selected.includes(id)}
-            theme={theme}
-            onPress={() => onToggle(id)}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
-
 function DayPanel({
   isToday,
   selectedDateKey,
@@ -784,36 +843,27 @@ function DayPanel({
   );
 }
 
-function SupportRecCard({
+function SupportRecRow({
   rec,
   theme,
-  stacked,
   onOpen,
 }: {
   rec: MoodSupportRecommendation;
   theme: AppTheme;
-  stacked: boolean;
   onOpen: () => void;
 }) {
   return (
-    <View
-      style={[
-        styles.recCard,
-        stacked && styles.recCardStack,
-        { borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundAlt },
-      ]}>
-      <Text style={styles.recIcon}>{rec.icon}</Text>
-      <View style={styles.recCopy}>
-        <Text style={[styles.recTitle, { color: theme.text }]}>{rec.title}</Text>
-        <Text style={[styles.recBody, { color: theme.textSecondary }]}>{rec.explanation}</Text>
-        <Pressable
-          onPress={onOpen}
-          accessibilityRole="button"
-          accessibilityLabel={rec.actionLabel}
-          style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
-          <Text style={[styles.textBtnLabel, { color: theme.accent }]}>{rec.actionLabel}</Text>
-        </Pressable>
-      </View>
+    <View style={[styles.recRow, { borderColor: theme.surfaceBorder }]}>
+      <Text style={[styles.recTitle, { color: theme.text }]}>
+        {rec.icon} {rec.title}
+      </Text>
+      <Pressable
+        onPress={onOpen}
+        accessibilityRole="button"
+        accessibilityLabel={rec.actionLabel}
+        style={({ pressed }) => [styles.textBtn, pressed && styles.pressed]}>
+        <Text style={[styles.textBtnLabel, { color: theme.accent }]}>{rec.actionLabel}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -906,6 +956,8 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: CHECKIN_MAX_WIDTH,
     alignSelf: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
   },
   progress: {
     ...typography.bodySmall,
@@ -921,25 +973,30 @@ const styles = StyleSheet.create({
   supportCopy: {
     fontSize: 17,
     lineHeight: 26,
-    marginBottom: 28,
   },
-  hint: { ...typography.body, marginBottom: spacing.md },
-  selectedWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
+  stepBody: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
-  groupLabel: {
-    ...typography.body,
+  summarySlot: {
+    minHeight: 52,
+    justifyContent: 'flex-end',
+    marginBottom: 8,
+  },
+  summaryKicker: {
+    ...typography.caption,
     fontWeight: '700',
-    marginBottom: 10,
+    marginBottom: 4,
+  },
+  summaryText: {
+    ...typography.body,
+    fontWeight: '600',
   },
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   chip: {
     borderWidth: 1.5,
@@ -948,12 +1005,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   chipLabel: { fontSize: 15, lineHeight: 20 },
-  allFeelings: { gap: 18, marginTop: 8, marginBottom: 8 },
-  feelingGroup: { gap: 8 },
   sliderWrap: {
     width: '100%',
     maxWidth: 600,
-    marginBottom: 32,
   },
   stateLabel: {
     fontSize: 22,
@@ -992,10 +1046,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
-    marginTop: 12,
   },
   primaryBtn: {
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     width: 240,
     maxWidth: '100%',
   },
@@ -1011,31 +1064,47 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     minHeight: 88,
     maxHeight: 120,
-    marginBottom: 20,
     ...typography.body,
     fontSize: 16,
   },
-  savedInline: { marginTop: 28, gap: 6 },
-  savedTitle: { ...typography.body, fontWeight: '700' },
-  savedDetail: { ...typography.body },
-  supportArea: { marginTop: 12, gap: 8 },
-  supportTitle: { ...typography.body, fontWeight: '700' },
-  recs: { flexDirection: 'row', gap: spacing.sm },
-  recsStack: { flexDirection: 'column' },
-  recCard: {
-    flex: 1,
-    minWidth: 0,
+  savedTitle: {
+    fontSize: 28,
+    lineHeight: 36,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  savedDetail: { ...typography.body, fontWeight: '700', marginBottom: 4 },
+  savedState: { ...typography.body },
+  loggedBody: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  supportList: { gap: 8 },
+  recRow: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
     borderWidth: 1,
     borderRadius: radii.sm,
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  recCardStack: { flex: 0, width: '100%' },
-  recIcon: { fontSize: 16, lineHeight: 22 },
-  recCopy: { flex: 1, minWidth: 0, gap: 2 },
-  recTitle: { ...typography.bodySmall, fontWeight: '700' },
-  recBody: { ...typography.bodySmall },
+  recTitle: { ...typography.body, fontWeight: '700', flex: 1, minWidth: 0 },
+  overlayScroll: { maxHeight: 320 },
+  tabRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  tab: {
+    borderWidth: 1.5,
+    borderRadius: radii.full,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  tabLabel: { fontSize: 14, lineHeight: 18 },
   section: { marginTop: 56 },
   sectionTitle: { ...typography.h2, marginBottom: 8 },
   sectionSub: { ...typography.body, fontSize: 16, lineHeight: 24, marginBottom: 16, maxWidth: 640 },

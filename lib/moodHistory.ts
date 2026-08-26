@@ -33,6 +33,7 @@ export function factorLabel(tag: string): string {
   if (value === 'unknown') return 'not sure';
   if (value === 'too much waiting') return 'waiting';
   if (value === 'social') return 'social life';
+  if (value === 'partner / relationship') return 'relationship';
   return tag;
 }
 

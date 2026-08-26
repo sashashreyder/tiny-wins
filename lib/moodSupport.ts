@@ -118,9 +118,15 @@ const MOOD_TOOLS: Partial<Record<MoodType, MoodSupportToolId[]>> = {
   connected: ['tiny-wins', 'garden'],
   motivated: ['focus', 'tiny-wins', 'cant-start'],
   curious: ['focus', 'brain-dump'],
+  happy: ['tiny-wins', 'garden'],
+  playful: ['tiny-wins', 'garden'],
   distracted: ['focus', 'brain-dump', 'water'],
   uncertain: ['brain-dump', 'focus'],
   bored: ['focus', 'tiny-wins'],
+  surprised: ['brain-dump', 'focus'],
+  thoughtful: ['brain-dump', 'garden'],
+  stressed: ['self-care', 'brain-dump', 'focus'],
+  scared: ['self-care', 'brain-dump'],
 };
 
 const MAX_RECOMMENDATIONS = 3;
@@ -160,6 +166,7 @@ function factorBoosts(factor: string, moods: MoodType[]): MoodSupportToolId[] {
       return ['self-care', 'brain-dump'];
     case 'family':
     case 'friends':
+    case 'relationship':
     case 'partner / relationship':
     case 'dating':
     case 'social life':

@@ -1,4 +1,4 @@
-import { moodOptions } from '@/data/content';
+import { FeelingGroup, moodOptions } from '@/data/content';
 import { MoodType } from '@/types';
 
 export const MOOD_STATE_MIN = -3;
@@ -12,6 +12,12 @@ export const moodStateLabels: Record<number, string> = {
   1: 'Slightly pleasant',
   2: 'Pleasant',
   3: 'Very pleasant',
+};
+
+export const feelingGroupLabels: Record<FeelingGroup, string> = {
+  pleasant: 'Pleasant',
+  mixed: 'Neutral / mixed',
+  unpleasant: 'Unpleasant',
 };
 
 export function clampMoodState(value: number): number {
@@ -32,23 +38,50 @@ export function fallbackMoodFromScore(score: number | undefined): MoodType {
   return 'proud';
 }
 
-const RECOMMENDED_BY_SCORE: Record<number, MoodType[]> = {
-  [-3]: ['sad', 'overwhelmed', 'anxious', 'empty', 'lonely', 'numb', 'tired', 'detached'],
-  [-2]: ['sad', 'anxious', 'frustrated', 'overwhelmed', 'worried', 'tired', 'lonely', 'irritated'],
-  [-1]: ['tired', 'foggy', 'uncertain', 'anxious', 'restless', 'distracted', 'worried', 'okay-ish'],
-  0: ['okay-ish', 'calm', 'uncertain', 'tired', 'curious', 'restless', 'foggy', 'content'],
-  1: ['calm', 'hopeful', 'content', 'okay-ish', 'curious', 'relieved', 'motivated', 'grateful'],
-  2: ['hopeful', 'proud', 'grateful', 'energized', 'content', 'confident', 'connected', 'motivated'],
-  3: ['proud', 'grateful', 'excited', 'energized', 'confident', 'connected', 'hopeful', 'motivated'],
+export function feelingGroupForScore(score: number): FeelingGroup {
+  const value = clampMoodState(score);
+  if (value < 0) return 'unpleasant';
+  if (value > 0) return 'pleasant';
+  return 'mixed';
+}
+
+/** ~8–12 first-screen suggestions for the current overall state. */
+const PRIMARY_BY_SCORE: Record<number, MoodType[]> = {
+  [-3]: ['sad', 'overwhelmed', 'empty', 'lonely', 'anxious', 'scared', 'stressed', 'angry', 'numb', 'detached'],
+  [-2]: ['sad', 'anxious', 'frustrated', 'overwhelmed', 'worried', 'irritated', 'stressed', 'lonely', 'tired', 'foggy'],
+  [-1]: ['anxious', 'worried', 'frustrated', 'tired', 'foggy', 'uncertain', 'restless', 'overwhelmed', 'okay-ish', 'distracted'],
+  0: ['okay-ish', 'uncertain', 'tired', 'foggy', 'thoughtful', 'restless', 'distracted', 'bored', 'numb', 'surprised'],
+  1: ['calm', 'content', 'hopeful', 'grateful', 'relieved', 'curious', 'motivated', 'okay-ish', 'thoughtful', 'tired'],
+  2: ['hopeful', 'proud', 'grateful', 'energized', 'content', 'confident', 'connected', 'motivated', 'calm', 'curious'],
+  3: ['proud', 'excited', 'energized', 'happy', 'playful', 'grateful', 'confident', 'connected', 'hopeful', 'motivated'],
 };
 
-export function recommendedFeelings(score: number): typeof moodOptions {
-  const ids = RECOMMENDED_BY_SCORE[clampMoodState(score)] ?? RECOMMENDED_BY_SCORE[0];
+function optionsFor(ids: MoodType[]) {
   return ids
     .map((id) => moodOptions.find((option) => option.id === id))
     .filter((option): option is (typeof moodOptions)[number] => Boolean(option));
 }
 
-export function feelingsByGroup(group: 'pleasant' | 'mixed' | 'unpleasant') {
+export function primaryFeelings(score: number) {
+  const ids = PRIMARY_BY_SCORE[clampMoodState(score)] ?? PRIMARY_BY_SCORE[0];
+  return optionsFor(ids);
+}
+
+/** Extra same-context feelings for the More overlay (not the opposite category). */
+export function moreFeelings(score: number) {
+  const group = feelingGroupForScore(score);
+  const primary = new Set(
+    (PRIMARY_BY_SCORE[clampMoodState(score)] ?? PRIMARY_BY_SCORE[0]) as MoodType[],
+  );
+  const groups: FeelingGroup[] =
+    group === 'pleasant'
+      ? ['pleasant', 'mixed']
+      : group === 'unpleasant'
+        ? ['unpleasant', 'mixed']
+        : ['mixed'];
+  return moodOptions.filter((option) => groups.includes(option.group) && !primary.has(option.id));
+}
+
+export function feelingsByGroup(group: FeelingGroup) {
   return moodOptions.filter((option) => option.group === group);
 }

@@ -78,6 +78,8 @@ export type MoodType =
   | 'connected'
   | 'motivated'
   | 'curious'
+  | 'happy'
+  | 'playful'
   | 'sad'
   | 'anxious'
   | 'worried'
@@ -90,6 +92,8 @@ export type MoodType =
   | 'guilty'
   | 'overwhelmed'
   | 'empty'
+  | 'stressed'
+  | 'scared'
   | 'tired'
   | 'foggy'
   | 'numb'
@@ -98,7 +102,9 @@ export type MoodType =
   | 'distracted'
   | 'uncertain'
   | 'bored'
-  | 'detached';
+  | 'detached'
+  | 'surprised'
+  | 'thoughtful';
 
 export type WakeFeeling =
   | 'refreshed'
