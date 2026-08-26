@@ -67,6 +67,11 @@ export function primaryFeelings(score: number) {
   return optionsFor(ids);
 }
 
+/** @deprecated Use primaryFeelings. Kept so Fast Refresh does not crash older MoodScreen bundles. */
+export function recommendedFeelings(score: number) {
+  return primaryFeelings(score);
+}
+
 /** Extra same-context feelings for the More overlay (not the opposite category). */
 export function moreFeelings(score: number) {
   const group = feelingGroupForScore(score);

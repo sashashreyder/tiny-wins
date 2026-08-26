@@ -344,16 +344,36 @@ export const MORE_MOOD_TAGS = [
 export const moodTags = [...PRIMARY_MOOD_TAGS, ...MORE_MOOD_TAGS];
 
 export const sleepTags = [
-  'melatonin', 'caffeine', 'alcohol', 'late screen', 'stress', 'noise', 'nap', 'unknown',
-];
+  'caffeine',
+  'late screen',
+  'stress',
+  'noise',
+  'temperature',
+  'alcohol',
+  'medication',
+  'sleep aid',
+  'nap',
+  'pain / discomfort',
+  'schedule change',
+  'late meal',
+  'hormones',
+  'travel',
+  'not sure',
+] as const;
 
 export const wakeFeelings = [
   { id: 'refreshed', label: 'Refreshed' },
   { id: 'okay', label: 'Okay' },
+  { id: 'sleepy', label: 'Sleepy' },
   { id: 'heavy', label: 'Heavy' },
-  { id: 'anxious', label: 'Anxious' },
   { id: 'foggy', label: 'Foggy' },
+  { id: 'anxious', label: 'Anxious' },
   { id: 'wired', label: 'Wired' },
+  { id: 'restless', label: 'Restless' },
+  { id: 'irritable', label: 'Irritable' },
+  { id: 'low-energy', label: 'Low-energy' },
+  { id: 'headache', label: 'Headache' },
+  { id: 'groggy', label: 'Groggy' },
 ] as const;
 
 export const selfCareItems = [
@@ -492,7 +512,7 @@ export const toolDefinitions: ToolDefinition[] = [
   { id: 'tiny-wins', title: 'Tiny Wins', description: 'Log small actions that count.', bestFor: 'Invisible progress', estimatedTime: '30 sec', category: 'reflect', route: '/tiny-wins', icon: '✨' },
   { id: 'focus', title: 'Focus Sprint', description: 'ADHD-friendly timed focus.', bestFor: 'Getting started', estimatedTime: '3–45 min', category: 'focus', route: '/focus', icon: '⏱️' },
   { id: 'mood', title: 'Mood Tracker', description: 'Notice patterns without judgment.', bestFor: 'Emotional awareness', estimatedTime: '1 min', category: 'reflect', route: '/mood', icon: '💭' },
-  { id: 'sleep', title: 'Sleep Tracker', description: 'Track sleep gently, no shame.', bestFor: 'Sleep patterns', estimatedTime: '2 min', category: 'sleep', route: '/sleep', icon: '🌙' },
+  { id: 'sleep', title: 'Sleep Tracker', description: 'Notice your sleep patterns over time.', bestFor: 'Sleep patterns', estimatedTime: '2 min', category: 'sleep', route: '/sleep', icon: '🌙' },
   { id: 'water', title: 'Water Tracker', description: 'One tap hydration logging.', bestFor: 'Basic self-care', estimatedTime: '10 sec', category: 'self-care', route: '/water', icon: '💧' },
   { id: 'self-care', title: 'Self-Care Tracker', description: 'Gentle daily care checklist.', bestFor: 'Forgotten basics', estimatedTime: '2 min', category: 'self-care', route: '/self-care', icon: '🫶' },
   { id: 'home-care', title: 'Home Care', description: 'ADHD-friendly home resets.', bestFor: 'Chaotic spaces', estimatedTime: '1–5 min', category: 'home', route: '/home-care', icon: '🏠' },

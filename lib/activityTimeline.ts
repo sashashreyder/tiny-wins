@@ -1,6 +1,7 @@
 import { moodOptions } from '@/data/content';
 import { startOfLocalDayMs, toLocalDateKey } from '@/lib/dateUtils';
 import { getMoodDateKey, getEntryMoods } from '@/lib/moodHistory';
+import { getSleepDateKey, getSleepDurationMinutes } from '@/lib/sleepHistory';
 import {
   ActivityEntry,
   ActivitySource,
@@ -170,11 +171,14 @@ export function buildActivityTimeline(state: ActivityTimelineState): ActivityEnt
   }
 
   for (const entry of state.sleepEntries ?? []) {
+    const durationMinutes = getSleepDurationMinutes(entry);
+    const hours =
+      durationMinutes != null ? durationMinutes / 60 : entry.hours;
     entries.push({
       id: `sleep:${entry.id}`,
       source: 'sleep',
-      title: formatSleepTitle(entry.hours),
-      dateKey: toLocalDateKey(entry.createdAt),
+      title: formatSleepTitle(hours),
+      dateKey: getSleepDateKey(entry),
       createdAt: entry.createdAt,
     });
   }

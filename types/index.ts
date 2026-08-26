@@ -109,10 +109,18 @@ export type MoodType =
 export type WakeFeeling =
   | 'refreshed'
   | 'okay'
+  | 'sleepy'
   | 'heavy'
-  | 'anxious'
   | 'foggy'
-  | 'wired';
+  | 'anxious'
+  | 'wired'
+  | 'restless'
+  | 'irritable'
+  | 'low-energy'
+  | 'headache'
+  | 'groggy';
+
+export type SleepSessionType = 'main' | 'nap';
 
 export type FocusResult =
   | 'started'
@@ -191,15 +199,47 @@ export interface MoodEntry {
 
 export interface SleepEntry {
   id: string;
+  /**
+   * Session kind. Omitted on older entries — treat missing as `'main'`.
+   * Multiple sessions may share the same local wake date.
+   */
+  type?: SleepSessionType;
+  /** Legacy HH:MM bedtime. Empty string when went-to-bed was skipped. */
   bedtime: string;
+  /** Legacy HH:MM fall-asleep time. Prefer `fellAsleepAt` when present. */
   sleepTime: string;
+  /** Legacy HH:MM wake time. Prefer `wokeAt` when present. */
   wakeTime: string;
+  /**
+   * Legacy duration in hours (may be manually typed on old entries).
+   * Prefer `durationMinutes` when present.
+   */
   hours: number;
+  /** ISO datetime. Omitted on older entries. */
+  wentToBedAt?: string;
+  /** ISO datetime for sleep start. Omitted on older entries. */
+  fellAsleepAt?: string;
+  /** ISO datetime for sleep end. Omitted on older entries. */
+  wokeAt?: string;
+  /** Calculated duration. Omitted on older entries. */
+  durationMinutes?: number;
+  /** 1–5 self-reported quality. Not a clinical score. */
   quality: number;
+  /** First selected wake feeling, or a fallback when none were chosen. */
   wakeFeeling: WakeFeeling;
+  /** Selected wake feelings. `[]` means none chosen. Omitted on older entries. */
+  wakeFeelings?: WakeFeeling[];
+  /** Context tags / factors. Older entries may include `'unknown'` or `'melatonin'`. */
   tags: string[];
+  /** Alias of `tags` on newer entries. Prefer `tags` when reading. */
+  factors?: string[];
   note?: string;
   createdAt: string;
+  /**
+   * Local calendar day the user woke up, as YYYY-MM-DD.
+   * History groups by this date. Older persisted entries may omit it.
+   */
+  dateKey?: string;
 }
 
 export interface WaterEntry {

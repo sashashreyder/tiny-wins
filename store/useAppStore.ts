@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { createDemoState, createEmptyState } from '@/data/demoData';
 import { todayLocalDateKey } from '@/lib/dateUtils';
 import { hydrateMoodEntry } from '@/lib/moodHistory';
+import { hydrateSleepEntry } from '@/lib/sleepHistory';
 import {
   calculateXP,
   checkAchievements,
@@ -37,6 +38,8 @@ interface AppActions {
   completeCantStartQuest: (quest: string, stuckType: StuckType) => void;
   addMood: (entry: Omit<MoodEntry, 'id' | 'createdAt' | 'dateKey'>) => void;
   addSleep: (entry: Omit<SleepEntry, 'id' | 'createdAt'>) => void;
+  updateSleep: (id: string, entry: Omit<SleepEntry, 'id' | 'createdAt'>) => void;
+  deleteSleep: (id: string) => void;
   addWater: (amount?: number) => void;
   addBrainDump: (entry: Omit<BrainDumpEntry, 'id' | 'createdAt'>) => void;
   addParkedThoughts: (texts: string[]) => number;
@@ -180,14 +183,33 @@ export const useAppStore = create<AppStore>()(
       },
 
       addSleep: (entry) => {
-        const sleep: SleepEntry = {
+        const sleep = hydrateSleepEntry({
           ...entry,
           id: `sleep-${Date.now()}`,
           createdAt: new Date().toISOString(),
-        };
+        });
         get().addXP(calculateXP('sleep'));
         get().markAchievementEvent('sleep-log');
         set((s) => ({ sleepEntries: [...s.sleepEntries, sleep] }));
+      },
+
+      updateSleep: (id, entry) => {
+        set((s) => ({
+          sleepEntries: s.sleepEntries.map((existing) =>
+            existing.id === id
+              ? hydrateSleepEntry({
+                  ...existing,
+                  ...entry,
+                  id: existing.id,
+                  createdAt: existing.createdAt,
+                })
+              : existing,
+          ),
+        }));
+      },
+
+      deleteSleep: (id) => {
+        set((s) => ({ sleepEntries: s.sleepEntries.filter((entry) => entry.id !== id) }));
       },
 
       addWater: (amount = 1) => {
@@ -398,6 +420,9 @@ export const useAppStore = create<AppStore>()(
         }
         if (Array.isArray(merged.moodEntries)) {
           merged.moodEntries = merged.moodEntries.map(hydrateMoodEntry);
+        }
+        if (Array.isArray(merged.sleepEntries)) {
+          merged.sleepEntries = merged.sleepEntries.map(hydrateSleepEntry);
         }
         return merged;
       },
